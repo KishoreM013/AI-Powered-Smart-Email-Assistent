@@ -48,6 +48,9 @@ export default function LoginPage({ onLoginSuccess }) {
     fetchConfig();
   }, []);
 
+  const [loginMethod, setLoginMethod] = useState('google'); // 'google' | 'imap'
+  const [appPassword, setAppPassword] = useState('');
+
   // 1. Google OAuth Main Button Handler
   const handleGoogleOAuthLogin = async () => {
     setIsLoading(true);
@@ -70,14 +73,37 @@ export default function LoginPage({ onLoginSuccess }) {
     }
   };
 
-  // 2. Custom Google Account Sign-In via Google OAuth
-  const handleCustomEmailSubmit = async (e) => {
+  // 2. Custom IMAP Direct Login with App Password
+  const handleImapLogin = async (e) => {
     e?.preventDefault();
     if (!customEmail || !customEmail.includes('@')) {
-      setErrorMsg('Please enter a valid Google/Gmail email address.');
+      setErrorMsg('Please enter your valid Gmail address.');
       return;
     }
-    await handleGoogleOAuthLogin();
+    if (!appPassword || appPassword.length < 8) {
+      setErrorMsg('Please enter your Google 16-character App Password.');
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadingAction('imap');
+    setErrorMsg('');
+
+    try {
+      const res = await authAPI.imapLogin({
+        email: customEmail.trim(),
+        app_password: appPassword.trim()
+      });
+      if (res?.user) {
+        onLoginSuccess(res.user);
+      }
+    } catch (e) {
+      console.error(e);
+      setErrorMsg(e.response?.data?.detail || 'IMAP Authentication failed. Make sure to use a 16-character Google App Password.');
+    } finally {
+      setIsLoading(false);
+      setLoadingAction('');
+    }
   };
 
   return (
@@ -121,17 +147,17 @@ export default function LoginPage({ onLoginSuccess }) {
         {/* Verification Status Pill */}
         <div className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold mb-6 shadow-2xs">
           <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <span>OAuth 2.0 256-Bit Encrypted Google Sign-In</span>
-          <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">VERIFIED</span>
+          <span>Real Gmail Sync & Google OAuth 2.0 Enabled</span>
+          <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">LIVE</span>
         </div>
 
         {/* Hero Title */}
         <h1 className="text-3xl sm:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight max-w-3xl mb-3">
-          Sign In with <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 dark:from-blue-400 dark:via-indigo-400 dark:to-purple-400">Google</span> to Power Your Inbox
+          Connect Your Real <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 dark:from-blue-400 dark:via-indigo-400 dark:to-purple-400">Gmail Account</span>
         </h1>
 
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl mb-8 leading-relaxed font-medium">
-          Connect your Gmail or Google Workspace account to triage high-priority threads, extract deadlines, summarize attachments with OCR, and compose intelligent replies.
+          Fetch your real Gmail inbox messages with AI triage, Gemini summaries, PDF OCR parsing, and smart auto-reply drafting.
         </p>
 
         {errorMsg && (
@@ -144,68 +170,100 @@ export default function LoginPage({ onLoginSuccess }) {
         {/* Main Authentication Card */}
         <div className="w-full max-w-md p-6 sm:p-7 rounded-3xl bg-white/95 dark:bg-[#0D121F]/90 border border-slate-200/90 dark:border-slate-800/90 backdrop-blur-2xl shadow-2xl shadow-indigo-950/5 space-y-4 mb-8 text-left transition-all">
           
-          {/* Direct Gmail Input Field */}
-          <form onSubmit={handleCustomEmailSubmit} className="space-y-2">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              Enter Your Gmail / Google Account
-            </label>
-            <div className="flex items-center space-x-2">
-              <div className="relative flex-1">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  value={customEmail}
-                  onChange={(e) => setCustomEmail(e.target.value)}
-                  placeholder="your.email@gmail.com"
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-medium"
-                />
+          {/* Method Selection Tabs */}
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl text-xs font-bold mb-2">
+            <button
+              type="button"
+              onClick={() => setLoginMethod('google')}
+              className={`py-2 rounded-xl transition ${loginMethod === 'google' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            >
+              Google Sign-In
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginMethod('imap')}
+              className={`py-2 rounded-xl transition ${loginMethod === 'imap' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            >
+              App Password (IMAP)
+            </button>
+          </div>
+
+          {loginMethod === 'imap' ? (
+            /* Direct IMAP App Password Form */
+            <form onSubmit={handleImapLogin} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Gmail Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    required
+                    value={customEmail}
+                    onChange={(e) => setCustomEmail(e.target.value)}
+                    placeholder="your.real.email@gmail.com"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-medium"
+                  />
+                </div>
               </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1 flex items-center justify-between">
+                  <span>Google App Password</span>
+                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline lowercase font-semibold text-[10px]">Generate App Password</a>
+                </label>
+                <div className="relative">
+                  <Key className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="password"
+                    required
+                    value={appPassword}
+                    onChange={(e) => setAppPassword(e.target.value)}
+                    placeholder="16-character google app password"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Create a 16-character app password at myaccount.google.com/apppasswords to sync your real inbox directly.
+                </p>
+              </div>
+
               <button
                 type="submit"
                 disabled={isLoading}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center space-x-1 shrink-0"
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center space-x-2"
               >
-                {loadingAction === 'custom_email' ? (
+                {loadingAction === 'imap' ? (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <span>Sign In</span>
+                  <span>Sync Real Gmail Inbox Now</span>
                 )}
               </button>
+            </form>
+          ) : (
+            /* Google OAuth Login Form */
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={handleGoogleOAuthLogin}
+                disabled={isLoading}
+                className="w-full py-3.5 px-4 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm flex items-center justify-center space-x-3 transition duration-200 shadow-md hover:shadow-lg hover:border-indigo-400 dark:hover:border-indigo-500 transform hover:-translate-y-0.5 disabled:opacity-60"
+              >
+                {loadingAction === 'google_oauth' ? (
+                  <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-5 h-5" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                )}
+                <span>{loadingAction === 'google_oauth' ? 'Authenticating...' : 'Sign in with Google Account'}</span>
+              </button>
             </div>
-          </form>
-
-          {/* Divider */}
-          <div className="relative py-1">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-white dark:bg-[#0D121F] px-3 text-slate-400 font-semibold">
-                Or sign in with Google OAuth
-              </span>
-            </div>
-          </div>
-
-          {/* Official Google OAuth Login Button */}
-          <div>
-            <button
-              onClick={handleGoogleOAuthLogin}
-              disabled={isLoading}
-              className="w-full py-3.5 px-4 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 font-bold text-sm flex items-center justify-center space-x-3 transition duration-200 shadow-md hover:shadow-lg hover:border-indigo-400 dark:hover:border-indigo-500 transform hover:-translate-y-0.5 disabled:opacity-60"
-            >
-              {loadingAction === 'google_oauth' ? (
-                <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-              )}
-              <span>{loadingAction === 'google_oauth' ? 'Authenticating...' : 'Sign in with Google Account'}</span>
-            </button>
-          </div>
+          )}
 
           {/* Security & Permissions Footer Link */}
           <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 pt-1">

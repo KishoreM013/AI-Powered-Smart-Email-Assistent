@@ -2,8 +2,9 @@ import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 from app.auth.auth_handler import create_access_token, create_token_for_user, get_current_user, DEMO_USER
-from app.models.schemas import Token, UserProfile, GoogleLoginRequest, AuthConfigResponse
+from app.models.schemas import Token, UserProfile, GoogleLoginRequest, AuthConfigResponse, IMAPLoginRequest
 from app.services.gmail_service import gmail_service
+from app.services.imap_service import imap_service
 from app.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -72,6 +73,40 @@ async def google_login(req: GoogleLoginRequest):
         await gmail_service.sync_inbox(user_email=email_clean, user_name=name)
     except Exception as e:
         print(f"[google_login] Inbox sync notice: {e}")
+
+    token = create_token_for_user(user_profile)
+    return Token(access_token=token, token_type="bearer", user=user_profile)
+
+@router.post("/imap-login", response_model=Token)
+async def imap_login(req: IMAPLoginRequest):
+    """
+    Authenticate and fetch real Gmail emails directly using Google App Password (IMAP SSL).
+    """
+    email_clean = req.email.strip().lower()
+    username_part = email_clean.split("@")[0]
+    name = " ".join([part.capitalize() for part in username_part.replace("_", ".").replace("-", ".").split(".")])
+    seed = hashlib.md5(email_clean.encode()).hexdigest()[:8]
+    avatar = f"https://api.dicebear.com/7.x/bottts/svg?seed={seed}"
+    user_id = f"usr-imap-{seed}"
+
+    try:
+        # Trigger real Gmail IMAP sync
+        res = await imap_service.fetch_real_emails_via_imap(
+            user_email=email_clean,
+            app_password=req.app_password,
+            max_emails=35
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    user_profile = UserProfile(
+        id=user_id,
+        email=email_clean,
+        name=name,
+        avatar=avatar,
+        is_demo=False,
+        connected_gmail=True
+    )
 
     token = create_token_for_user(user_profile)
     return Token(access_token=token, token_type="bearer", user=user_profile)

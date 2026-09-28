@@ -73,6 +73,24 @@ export const authAPI = {
     return { ...res.data, user };
   },
 
+  imapLogin: async ({ email, app_password }) => {
+    const res = await api.post('/api/auth/imap-login', { email, app_password });
+    const token = res.data?.access_token || res.data?.token;
+    if (token) {
+      localStorage.setItem('smart_email_token', token);
+    }
+    const rawUser = res.data?.user || {};
+    const user = {
+      id: rawUser.id || 'usr-imap-1',
+      email: rawUser.email || email,
+      name: rawUser.name || (email ? email.split('@')[0] : 'User'),
+      avatar: rawUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${email}`,
+      connected_gmail: true
+    };
+    localStorage.setItem('smart_email_user', JSON.stringify(user));
+    return { ...res.data, user };
+  },
+
   demoLogin: async (payload = {}) => {
     return authAPI.googleLogin(payload);
   },

@@ -142,6 +142,10 @@ class AuthConfigResponse(BaseModel):
     is_live_configured: bool = False
     demo_mode: bool = True
 
+class IMAPLoginRequest(BaseModel):
+    email: str
+    app_password: str
+
 class SettingsUpdateRequest(BaseModel):
     gemini_api_key: Optional[str] = None
     demo_mode: Optional[bool] = None

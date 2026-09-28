@@ -72,10 +72,26 @@ def get_email(email_id: str, current_user: UserProfile = Depends(get_current_use
         email.is_read = True
     return email
 
+from app.services.imap_service import imap_service
+
 @router.post("/sync")
 async def sync_emails(current_user: UserProfile = Depends(get_current_user)):
     """Trigger email sync pipeline and AI categorization."""
+    creds = db.get_user_credentials(current_user.email)
+    if creds and creds.get("type") == "imap" and creds.get("imap_pass"):
+        return await imap_service.fetch_real_emails_via_imap(
+            user_email=current_user.email,
+            app_password=creds["imap_pass"]
+        )
     return await gmail_service.sync_inbox(user_email=current_user.email, user_name=current_user.name)
+
+@router.post("/sync-imap")
+async def sync_imap_emails(app_password: str, current_user: UserProfile = Depends(get_current_user)):
+    """Directly fetch real emails from Gmail IMAP using App Password."""
+    return await imap_service.fetch_real_emails_via_imap(
+        user_email=current_user.email,
+        app_password=app_password
+    )
 
 @router.post("/{email_id}/toggle-read", response_model=EmailItem)
 def toggle_read(email_id: str, current_user: UserProfile = Depends(get_current_user)):
