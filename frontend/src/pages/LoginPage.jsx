@@ -56,110 +56,28 @@ export default function LoginPage({ onLoginSuccess }) {
     const targetEmail = customEmail.trim() || undefined;
     try {
       const data = await authAPI.getLoginUrl(targetEmail);
-      const isPlaceholderClient = !data?.url || data.url.includes('your_client_id');
-      
-      if (data?.url && !data.url.includes('demo_auth=true') && !isPlaceholderClient) {
-        // Redirect to live production Google OAuth consent page
+      if (data?.url) {
         window.location.href = data.url;
         return;
       }
-      
-      // Fallback if live credentials not configured
-      const res = await authAPI.googleLogin({
-        email: customEmail.trim() || "user@gmail.com",
-        name: (customEmail.trim() || "User").split('@')[0],
-        is_demo: false
-      });
-      const userObj = res?.user || { email: customEmail.trim() || "user@gmail.com", name: "User" };
-      onLoginSuccess(userObj);
+      setErrorMsg('Google OAuth Cloud credentials missing. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend/.env to connect your real Gmail account.');
     } catch (e) {
       console.error(e);
-      onLoginSuccess({ email: customEmail.trim() || "user@gmail.com", name: "User" });
+      setErrorMsg('Failed to connect to Google OAuth servers. Ensure backend is running.');
     } finally {
       setIsLoading(false);
       setLoadingAction('');
     }
   };
 
-  // 2. Google Preset Account Sign-In
-  const handlePresetLogin = async (acc) => {
-    setIsLoading(true);
-    setLoadingAction(acc.email);
-    setErrorMsg('');
-    try {
-      const data = await authAPI.getLoginUrl(acc.email);
-      const isPlaceholderClient = !data?.url || data.url.includes('your_client_id');
-      if (data?.url && !isPlaceholderClient) {
-        window.location.href = data.url;
-        return;
-      }
-
-      const res = await authAPI.googleLogin({
-        email: acc.email,
-        name: acc.name,
-        avatar: acc.avatar,
-        is_demo: false
-      });
-      const userObj = res?.user || { email: acc.email, name: acc.name, picture: acc.avatar };
-      onLoginSuccess(userObj);
-    } catch (e) {
-      console.error(e);
-      onLoginSuccess({ email: acc.email, name: acc.name, picture: acc.avatar });
-    } finally {
-      setIsLoading(false);
-      setLoadingAction('');
-    }
-  };
-
-  // 3. Custom Google Account Sign-In
+  // 2. Custom Google Account Sign-In via Google OAuth
   const handleCustomEmailSubmit = async (e) => {
     e?.preventDefault();
     if (!customEmail || !customEmail.includes('@')) {
       setErrorMsg('Please enter a valid Google/Gmail email address.');
       return;
     }
-    setIsLoading(true);
-    setLoadingAction('custom_email');
-    setErrorMsg('');
-    try {
-      const data = await authAPI.getLoginUrl(customEmail.trim());
-      const isPlaceholderClient = !data?.url || data.url.includes('your_client_id');
-      if (data?.url && !isPlaceholderClient) {
-        window.location.href = data.url;
-        return;
-      }
-
-      const res = await authAPI.googleLogin({
-        email: customEmail.trim(),
-        is_demo: false
-      });
-      const userObj = res?.user || { email: customEmail.trim(), name: customEmail.trim().split('@')[0] };
-      onLoginSuccess(userObj);
-    } catch (e) {
-      console.error(e);
-      onLoginSuccess({ email: customEmail.trim(), name: customEmail.trim().split('@')[0] });
-    } finally {
-      setIsLoading(false);
-      setLoadingAction('');
-    }
-  };
-
-  // 4. Instant Demo Sandbox
-  const handleDemoLogin = async () => {
-    setIsLoading(true);
-    setLoadingAction('demo');
-    setErrorMsg('');
-    try {
-      const res = await authAPI.demoLogin();
-      const userObj = res?.user || { email: "demo.user@gmail.com", name: "Demo Admin" };
-      onLoginSuccess(userObj);
-    } catch (e) {
-      console.error(e);
-      onLoginSuccess({ email: "demo.user@gmail.com", name: "Demo Admin" });
-    } finally {
-      setIsLoading(false);
-      setLoadingAction('');
-    }
+    await handleGoogleOAuthLogin();
   };
 
   return (

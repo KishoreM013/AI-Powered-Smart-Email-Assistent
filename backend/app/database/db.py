@@ -13,6 +13,7 @@ except ImportError:
 class Database:
     def __init__(self):
         self.emails: Dict[str, EmailItem] = {}
+        self.user_credentials: Dict[str, Dict[str, Any]] = {}
         self.settings: Dict[str, Any] = {
             "demo_mode": False,
             "gemini_api_key": "",
@@ -24,6 +25,25 @@ class Database:
         self.supabase: Optional[Any] = None
         self._init_supabase()
         self.seed_initial_data()
+
+    def set_user_credentials(self, email: str, creds: Dict[str, Any]):
+        clean_email = (email or "").strip().lower()
+        if clean_email and creds:
+            self.user_credentials[clean_email] = creds
+
+    def get_user_credentials(self, email: str) -> Optional[Dict[str, Any]]:
+        clean_email = (email or "").strip().lower()
+        return self.user_credentials.get(clean_email)
+
+    def clear_fake_emails_for_user(self, email: str):
+        clean_email = (email or "").strip().lower()
+        to_delete = [
+            eid for eid, em in self.emails.items()
+            if (em.recipient_email.lower() == clean_email or em.sender_email.lower() == clean_email)
+            and eid.startswith("em-usr-")
+        ]
+        for eid in to_delete:
+            del self.emails[eid]
 
     def _init_supabase(self):
         """Initialize Supabase Cloud Client if credentials are provided."""
@@ -61,8 +81,21 @@ class Database:
                 if recip != clean_user and sendr != clean_user:
                     continue
 
-            if folder and folder.lower() != "all" and email.folder.lower() != folder.lower():
-                continue
+            if folder and folder.lower() != "all":
+                f_lower = folder.lower()
+                if f_lower == "important":
+                    p_val = email.priority.value if hasattr(email.priority, 'value') else str(email.priority)
+                    c_val = email.category.value if hasattr(email.category, 'value') else str(email.category)
+                    if not (p_val.lower() == "high" or c_val.lower() == "important" or email.is_starred):
+                        continue
+                elif f_lower == "starred":
+                    if not email.is_starred:
+                        continue
+                elif f_lower == "unread":
+                    if email.is_read:
+                        continue
+                elif email.folder.lower() != f_lower:
+                    continue
             if category and email.category.value.lower() != category.lower():
                 continue
             if priority and email.priority.value.lower() != priority.lower():

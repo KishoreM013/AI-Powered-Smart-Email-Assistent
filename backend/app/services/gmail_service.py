@@ -46,54 +46,71 @@ class GmailService:
         """Runs real-time email sync engine for the logged-in user."""
         clean_user = (user_email or "user@gmail.com").strip().lower()
         display_name = user_name.strip() if user_name else clean_user.split('@')[0].capitalize()
-
-        # Check existing emails in DB for this user
-        existing_user_emails = db.get_emails(folder="all", user_email=clean_user)
         added_count = 0
 
+        # Retrieve credentials from argument or DB cache
+        creds = credentials_dict or db.get_user_credentials(clean_user)
+
         # Attempt Live Gmail API fetch if credentials exist
-        if credentials_dict and self.client_id and self.client_secret:
+        if creds:
             try:
                 from app.services.gmail import fetch_emails_from_gmail
-                raw_emails = await fetch_emails_from_gmail(clean_user, credentials_dict)
-                for raw in raw_emails:
-                    email_id = raw["_id"]
-                    if email_id not in db.emails:
-                        analysis = await gemini_service.analyze_and_summarize_email(
-                            raw["subject"], raw["body_full"], raw["sender_name"]
-                        )
-                        email = EmailItem(
-                            id=email_id,
-                            sender_name=raw["sender_name"],
-                            sender_email=raw["sender_email"],
-                            recipient_email=clean_user,
-                            subject=raw["subject"],
-                            snippet=raw["body_snippet"],
-                            body=raw["body_full"],
-                            category=analysis.get("category", CategoryEnum.WORK),
-                            priority=analysis.get("priority", PriorityEnum.MEDIUM),
-                            date=raw.get("date", time.strftime("%b %d, %H:%M")),
-                            timestamp=time.time(),
-                            is_read=raw.get("is_read", False),
-                            summary=EmailSummary(
-                                bullet_points=analysis.get("bullet_points", []),
-                                one_liner=analysis.get("one_liner", ""),
-                                urgency_reason=analysis.get("urgency_reason"),
-                                sentiment=analysis.get("sentiment", "Neutral"),
-                                key_deadlines=analysis.get("deadlines", [])
-                            ),
-                            action_items=[
-                                ActionItem(task=item.get("task", ""), due_date=item.get("due_date"))
-                                for item in analysis.get("action_items", [])
-                            ],
-                            folder="inbox"
-                        )
-                        db.add_email(email)
-                        added_count += 1
-            except Exception as e:
-                print(f"[GmailService] Live sync notice: {e}")
+                raw_emails = await fetch_emails_from_gmail(clean_user, creds)
+                if raw_emails:
+                    # Clear simulated emails as soon as real Gmail API messages arrive
+                    db.clear_fake_emails_for_user(clean_user)
 
-        # If user has 0 emails in DB (or initial sync), seed user-personalized live inbox emails
+                    for raw in raw_emails:
+                        email_id = raw["_id"]
+                        if email_id not in db.emails:
+                            analysis = await gemini_service.analyze_and_summarize_email(
+                                raw["subject"], raw["body_full"], raw["sender_name"]
+                            )
+                            raw_date = raw.get("date")
+                            if hasattr(raw_date, "strftime"):
+                                date_str = raw_date.strftime("%b %d, %H:%M")
+                                # pyrefly: ignore [missing-attribute]
+                                ts = raw_date.timestamp()
+                            else:
+                                date_str = time.strftime("%b %d, %H:%M")
+                                ts = time.time()
+
+                            email = EmailItem(
+                                id=email_id,
+                                sender_name=raw["sender_name"],
+                                sender_email=raw["sender_email"],
+                                recipient_email=clean_user,
+                                subject=raw["subject"],
+                                snippet=raw["body_snippet"][:160] if raw.get("body_snippet") else raw["subject"],
+                                body=raw["body_full"],
+                                category=analysis.get("category", CategoryEnum.WORK),
+                                priority=analysis.get("priority", PriorityEnum.MEDIUM),
+                                date=date_str,
+                                timestamp=ts,
+                                is_read=raw.get("is_read", False),
+                                is_starred=raw.get("is_starred", False),
+                                summary=EmailSummary(
+                                    bullet_points=analysis.get("bullet_points", []),
+                                    one_liner=analysis.get("one_liner", ""),
+                                    urgency_reason=analysis.get("urgency_reason"),
+                                    sentiment=analysis.get("sentiment", "Neutral"),
+                                    key_deadlines=analysis.get("deadlines", [])
+                                ),
+                                action_items=[
+                                    ActionItem(task=item.get("task", ""), due_date=item.get("due_date"))
+                                    for item in analysis.get("action_items", [])
+                                ],
+                                folder=raw.get("folder", "inbox")
+                            )
+                            db.add_email(email)
+                            added_count += 1
+            except Exception as e:
+                print(f"[GmailService] Live Gmail API sync notice: {e}")
+
+        # Check existing emails in DB for this user after attempt
+        existing_user_emails = db.get_emails(folder="all", user_email=clean_user)
+
+        # If user has 0 emails in DB (and no live credentials connected), seed user-personalized inbox emails
         if len(existing_user_emails) == 0:
             user_emails = self.generate_user_inbox_emails(clean_user, display_name)
             for email in user_emails:
@@ -211,6 +228,43 @@ VP of Engineering""",
             ),
             EmailItem(
                 id=f"em-usr-{random.randint(10000, 99999)}",
+                sender_name="GitHub Notifications",
+                sender_email="notifications@github.com",
+                recipient_email=user_email,
+                subject="[PR Merged] #142 Implement OAuth2 & Gemini Pro Summarizer API",
+                snippet=f"Pull request #142 'Implement OAuth2 & Gemini Pro Summarizer API' was successfully merged into main branch...",
+                body=f"""Hello {user_name},
+
+Pull Request #142 [Implement OAuth2 & Gemini Pro Summarizer API] has been approved and merged into main branch by sarah-jenkins.
+
+Summary of changes:
+- Integrated FastAPI async background task queue for email processing
+- Added Pydantic schema validation for EmailItem and AISummary models
+- 100% unit test coverage for authentication middleware
+
+View PR: https://github.com/techcorp/smart-email-assistant/pull/142""",
+                category=CategoryEnum.WORK,
+                priority=PriorityEnum.HIGH,
+                date="4 hrs ago",
+                timestamp=now - 14400,
+                is_read=False,
+                is_starred=True,
+                folder="inbox",
+                summary=EmailSummary(
+                    bullet_points=[
+                        "PR #142 merged into main branch by Sarah Jenkins",
+                        "Includes OAuth2, Gemini Pro summarizer API, and FastAPI async tasks",
+                        "All unit tests passing with 100% coverage"
+                    ],
+                    one_liner="GitHub PR #142 merged into main branch.",
+                    sentiment="Positive"
+                ),
+                action_items=[
+                    ActionItem(task="Pull latest main branch and verify local build", due_date="Today", completed=False)
+                ]
+            ),
+            EmailItem(
+                id=f"em-usr-{random.randint(10000, 99999)}",
                 sender_name="Security Center",
                 sender_email="no-reply@security-alerts.io",
                 recipient_email=user_email,
@@ -241,6 +295,54 @@ Security Operations Team""",
                     one_liner=f"Security login notification for {user_email}.",
                     sentiment="Neutral"
                 )
+            ),
+            EmailItem(
+                id=f"em-usr-{random.randint(10000, 99999)}",
+                sender_name="Emily Zhao (Legal Lead)",
+                sender_email="emily.zhao@lexislegal.com",
+                recipient_email=user_email,
+                subject="Updated Master Services Agreement & Data Privacy Addendum",
+                snippet=f"Hi {user_name}, please review the updated Data Privacy Addendum for compliance with EU AI Act regulations...",
+                body=f"""Hi {user_name},
+
+Our legal team has finalized the updated Master Services Agreement (MSA) and Data Privacy Addendum to align with the new EU AI Act and GDPR compliance guidelines.
+
+Please review the attached document and provide your electronic signature by Wednesday end of day.
+
+Attached:
+- MSA_Privacy_Addendum_2026.pdf (1.8 MB)
+
+Best regards,
+Emily Zhao
+Senior Legal Counsel""",
+                category=CategoryEnum.WORK,
+                priority=PriorityEnum.MEDIUM,
+                date="7 hrs ago",
+                timestamp=now - 25200,
+                is_read=False,
+                is_starred=False,
+                has_attachments=True,
+                folder="inbox",
+                attachments=[
+                    AttachmentInfo(
+                        id="att-legal-01",
+                        filename="MSA_Privacy_Addendum_2026.pdf",
+                        size="1.8 MB",
+                        content_type="application/pdf"
+                    )
+                ],
+                summary=EmailSummary(
+                    bullet_points=[
+                        "Legal team finalized updated MSA & Data Privacy Addendum for GDPR/EU AI Act",
+                        "Electronic signature requested by Wednesday EOD"
+                    ],
+                    one_liner="Legal lead sent updated MSA & Data Privacy Addendum PDF for signature.",
+                    sentiment="Neutral",
+                    key_deadlines=["Wednesday EOD"]
+                ),
+                action_items=[
+                    ActionItem(task="Sign updated MSA and Privacy Addendum PDF", due_date="Wednesday EOD", completed=False)
+                ]
             ),
             EmailItem(
                 id=f"em-usr-{random.randint(10000, 99999)}",
@@ -278,6 +380,42 @@ Stripe Billing Team""",
             ),
             EmailItem(
                 id=f"em-usr-{random.randint(10000, 99999)}",
+                sender_name="Google Cloud Platform",
+                sender_email="no-reply@cloud.google.com",
+                recipient_email=user_email,
+                subject="Monthly Cloud Billing & AI API Usage Summary for September",
+                snippet=f"Hi {user_name}, your September cloud usage report is available. Total spend: $142.50 across Vertex AI and Gemini API...",
+                body=f"""Hi {user_name},
+
+Your monthly Google Cloud usage summary for project 'smart-email-assistant-prod' is now available.
+
+Account summary:
+- Gemini API Requests: 45,210 tokens processed
+- Cloud Run Services: $48.20
+- Supabase Vector Storage: $18.30
+- Total Invoice Amount: $142.50 USD (Auto-debited on Oct 1)
+
+View detailed billing metrics in your GCP Console.
+
+Google Cloud Billing Team""",
+                category=CategoryEnum.FINANCE,
+                priority=PriorityEnum.MEDIUM,
+                date="Yesterday",
+                timestamp=now - 88000,
+                is_read=True,
+                folder="inbox",
+                summary=EmailSummary(
+                    bullet_points=[
+                        "GCP monthly billing summary: $142.50 total spend",
+                        "Gemini API tokens processed: 45,210 tokens",
+                        "Auto-debit scheduled for Oct 1"
+                    ],
+                    one_liner="Google Cloud monthly billing report ($142.50).",
+                    sentiment="Neutral"
+                )
+            ),
+            EmailItem(
+                id=f"em-usr-{random.randint(10000, 99999)}",
                 sender_name="Amazon Logistics",
                 sender_email="shipment-tracking@amazon.com",
                 recipient_email=user_email,
@@ -306,6 +444,41 @@ Amazon Logistics""",
                         "Delivered by UPS Express to Front Door"
                     ],
                     one_liner="Amazon order delivery confirmation.",
+                    sentiment="Positive"
+                )
+            ),
+            EmailItem(
+                id=f"em-usr-{random.randint(10000, 99999)}",
+                sender_name="David Miller (Product Manager)",
+                sender_email="david.miller@techcorp.io",
+                recipient_email=user_email,
+                subject="Design Review: User Interface & Dark Mode Feedback",
+                snippet=f"Hi {user_name}, the product team reviewed the latest UI builds. Dark mode and glassmorphism styling look fantastic...",
+                body=f"""Hi {user_name},
+
+Great job on the latest UI iteration! The dark mode styling, responsive typography, and instant voice assistant modal received high praise during our design critique today.
+
+A few minor polish requests:
+1. Ensure email list action buttons (star, delete, unread) have subtle hover highlights in dark mode.
+2. Add micro-animation when AI summary modal opens.
+
+Let me know when the updated build is deployed to staging.
+
+Cheers,
+David Miller""",
+                category=CategoryEnum.WORK,
+                priority=PriorityEnum.MEDIUM,
+                date="2 days ago",
+                timestamp=now - 160000,
+                is_read=True,
+                is_starred=True,
+                folder="inbox",
+                summary=EmailSummary(
+                    bullet_points=[
+                        "Product team praised UI dark mode and design polish",
+                        "Feedback items: dark mode hover effects & modal micro-animations"
+                    ],
+                    one_liner="Product Manager shared positive UI design review feedback.",
                     sentiment="Positive"
                 )
             ),

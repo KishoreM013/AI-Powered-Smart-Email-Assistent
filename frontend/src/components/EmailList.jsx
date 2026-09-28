@@ -108,6 +108,10 @@ export default function EmailList({
     return true;
   });
 
+  const totalCount = listItems.length;
+  const importantCount = listItems.filter(item => item.priority === 'High' || item.category === 'Important' || item.is_starred).length;
+  const unreadCount = listItems.filter(item => !item.is_read).length;
+
   const renderAvatar = (item) => {
     if (item.avatar_icon === 'google' || item.sender_name?.includes('Google')) {
       return (
@@ -181,7 +185,7 @@ export default function EmailList({
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            All (12)
+            All ({totalCount})
           </button>
           <button
             onClick={() => setFilterTab('important')}
@@ -191,7 +195,7 @@ export default function EmailList({
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            Important (5)
+            Important ({importantCount})
           </button>
           <button
             onClick={() => setFilterTab('unread')}
@@ -201,7 +205,7 @@ export default function EmailList({
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
             }`}
           >
-            Unread (12)
+            Unread ({unreadCount})
           </button>
         </div>
       </div>

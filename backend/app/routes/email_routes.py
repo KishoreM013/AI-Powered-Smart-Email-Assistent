@@ -42,7 +42,10 @@ async def list_emails(
     has_attachments: Optional[bool] = Query(None),
     current_user: UserProfile = Depends(get_current_user)
 ):
-    """Retrieve filtered list of emails."""
+    all_user_emails = db.get_emails(folder="all", user_email=current_user.email)
+    if not all_user_emails:
+        await gmail_service.sync_inbox(user_email=current_user.email, user_name=current_user.name)
+
     emails = db.get_emails(
         folder=folder,
         category=category,
@@ -53,18 +56,6 @@ async def list_emails(
         has_attachments=has_attachments,
         user_email=current_user.email
     )
-    if not emails and folder == "inbox" and not category and not priority and not search:
-        await gmail_service.sync_inbox(user_email=current_user.email, user_name=current_user.name)
-        emails = db.get_emails(
-            folder=folder,
-            category=category,
-            priority=priority,
-            search=search,
-            unread_only=unread_only,
-            starred_only=starred_only,
-            has_attachments=has_attachments,
-            user_email=current_user.email
-        )
     return emails
 
 

@@ -61,6 +61,7 @@ export default function App() {
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [serverCounts, setServerCounts] = useState(null);
 
   // Modals & Feature Dialogs
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -73,6 +74,15 @@ export default function App() {
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const loadCounts = async () => {
+    try {
+      const counts = await emailsAPI.getCounts();
+      if (counts) setServerCounts(counts);
+    } catch (e) {
+      console.error("Failed to fetch counts:", e);
+    }
   };
 
   // Fetch emails from API backend
@@ -91,6 +101,7 @@ export default function App() {
           setSelectedEmail(data[0]);
         }
       }
+      await loadCounts();
     } catch (e) {
       console.error('Failed to load emails:', e);
     } finally {
@@ -109,6 +120,7 @@ export default function App() {
     try {
       const res = await emailsAPI.syncInbox();
       await loadEmails();
+      await loadCounts();
       showToast(res?.message || "Inbox synchronized with AI categorization!");
     } catch (e) {
       console.error(e);
@@ -186,12 +198,12 @@ export default function App() {
   const activeUser = user;
 
   const folderCounts = {
-    inbox: emails.filter(e => e.folder === 'inbox' && !e.is_read).length,
-    urgent: emails.filter(e => e.priority === 'High' || e.is_starred).length,
-    sent: emails.filter(e => e.folder === 'sent').length,
-    drafts: emails.filter(e => e.folder === 'drafts').length,
-    spam: emails.filter(e => e.folder === 'spam' || e.is_spam).length,
-    trash: emails.filter(e => e.folder === 'trash' || e.is_trash).length,
+    inbox: serverCounts?.inbox ?? emails.filter(e => e.folder === 'inbox').length,
+    urgent: serverCounts?.urgent ?? emails.filter(e => e.priority === 'High' || e.is_starred).length,
+    sent: serverCounts?.sent ?? emails.filter(e => e.folder === 'sent').length,
+    drafts: serverCounts?.drafts ?? 0,
+    spam: serverCounts?.spam ?? emails.filter(e => e.folder === 'spam' || e.is_spam).length,
+    trash: serverCounts?.trash ?? emails.filter(e => e.folder === 'trash' || e.is_trash).length,
   };
 
   if (showLandingPage && !user) {
