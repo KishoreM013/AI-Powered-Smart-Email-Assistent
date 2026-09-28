@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Star, Mail, AlertTriangle, Trash2, CheckCircle, Sparkles } from 'lucide-react';
 
 export default function EmailList({
+  activeFolder = 'all',
   emails = [],
   selectedEmail,
   onSelectEmail,
@@ -11,6 +12,20 @@ export default function EmailList({
   isLoading
 }) {
   const [filterTab, setFilterTab] = useState('all'); // 'all' | 'important' | 'unread'
+
+  const getFolderTitle = () => {
+    switch ((activeFolder || 'all').toLowerCase()) {
+      case 'all': return 'All Mail';
+      case 'inbox': return 'Inbox';
+      case 'important': return 'Important Emails';
+      case 'snoozed': return 'Snoozed';
+      case 'sent': return 'Sent Mail';
+      case 'drafts': return 'Drafts';
+      case 'spam': return 'Spam / Phishing';
+      case 'trash': return 'Trash';
+      default: return activeFolder ? activeFolder.charAt(0).toUpperCase() + activeFolder.slice(1) : 'All Mail';
+    }
+  };
 
   // Pre-configured rich mock data matching the reference image if emails array is default
   const defaultItems = [
@@ -172,7 +187,7 @@ export default function EmailList({
       {/* Top Header & Filter Tabs Bar */}
       <div className="p-3.5 border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
         <h2 className="font-extrabold text-base text-slate-900 dark:text-white">
-          Inbox
+          {getFolderTitle()}
         </h2>
 
         {/* Filter Tabs */}

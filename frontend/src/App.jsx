@@ -15,13 +15,21 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { emailsAPI, authAPI } from './services/api';
 
+const DEFAULT_USER = {
+  id: "usr-user-01",
+  email: "user@gmail.com",
+  name: "User Account",
+  avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=UserAccount",
+  connected_gmail: true
+};
+
 export default function App() {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('smart_email_user');
-    return saved ? JSON.parse(saved) : null;
+    return saved ? JSON.parse(saved) : DEFAULT_USER;
   });
 
-  const [showLandingPage, setShowLandingPage] = useState(!user);
+  const [showLandingPage, setShowLandingPage] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
 
   // Theme & Language State
@@ -52,7 +60,7 @@ export default function App() {
 
   // View States
   const [activeView, setActiveView] = useState('inbox');
-  const [activeFolder, setActiveFolder] = useState('inbox');
+  const [activeFolder, setActiveFolder] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -110,7 +118,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user && activeView === 'inbox') {
+    if (activeView === 'inbox') {
       loadEmails();
     }
   }, [user, activeFolder, selectedCategory, searchQuery, activeView]);
@@ -198,6 +206,7 @@ export default function App() {
   const activeUser = user;
 
   const folderCounts = {
+    all: serverCounts?.all ?? emails.length,
     inbox: serverCounts?.inbox ?? emails.filter(e => e.folder === 'inbox').length,
     urgent: serverCounts?.urgent ?? emails.filter(e => e.priority === 'High' || e.is_starred).length,
     sent: serverCounts?.sent ?? emails.filter(e => e.folder === 'sent').length,
@@ -269,6 +278,7 @@ export default function App() {
             {/* Center Email List Feed */}
             <div className="w-full md:w-5/12 lg:w-5/12 flex-shrink-0 flex flex-col h-full border-r border-slate-200 dark:border-slate-800/80">
               <EmailList
+                activeFolder={activeFolder}
                 emails={emails}
                 selectedEmail={selectedEmail}
                 onSelectEmail={(e) => setSelectedEmail(e)}

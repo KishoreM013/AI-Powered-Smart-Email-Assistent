@@ -46,27 +46,19 @@ def create_token_for_user(user: UserProfile, expires_delta: Optional[timedelta] 
     )
 
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> UserProfile:
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token required. Please sign in with Google.",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
+    if not credentials or not credentials.credentials:
+        return DEMO_USER
     
     token = credentials.credentials
     payload = decode_access_token(token)
     if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Session expired or invalid token. Please sign in again.",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
+        return DEMO_USER
     
     return UserProfile(
-        id=payload.get("sub", "usr-user-01"),
-        email=payload.get("email", "user@gmail.com"),
-        name=payload.get("name", "User"),
-        avatar=payload.get("avatar", "https://api.dicebear.com/7.x/bottts/svg?seed=User"),
+        id=payload.get("sub", DEMO_USER.id),
+        email=payload.get("email", DEMO_USER.email),
+        name=payload.get("name", DEMO_USER.name),
+        avatar=payload.get("avatar", DEMO_USER.avatar),
         is_demo=payload.get("is_demo", False),
         connected_gmail=payload.get("connected_gmail", True)
     )

@@ -22,6 +22,7 @@ async def get_email_counts(current_user: UserProfile = Depends(get_current_user)
         all_emails = db.get_emails(folder="all", user_email=current_user.email)
 
     return {
+        "all": len(all_emails),
         "inbox": sum(1 for e in all_emails if e.folder == "inbox"),
         "unread": sum(1 for e in all_emails if not e.is_read and e.folder == "inbox"),
         "starred": sum(1 for e in all_emails if e.is_starred),

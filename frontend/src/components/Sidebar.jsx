@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Inbox, Star, Clock, Send, FileText, AlertTriangle, Trash2,
   Bot, MessageSquare, ShieldCheck, Mic, Sparkles, CheckCircle2,
-  Bookmark
+  Bookmark, Mail
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -22,6 +22,7 @@ export default function Sidebar({
   onOpenVoiceCommand
 }) {
   const folders = [
+    { id: 'all', label: 'All Mail', icon: Mail, count: folderCounts.all, badgeColor: 'bg-slate-700 text-white' },
     { id: 'inbox', label: 'Inbox', icon: Inbox, count: folderCounts.inbox ?? unreadCount, badgeColor: 'bg-indigo-600 text-white' },
     { id: 'important', label: 'Important', icon: Bookmark, count: folderCounts.urgent ?? urgentCount, badgeColor: 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' },
     { id: 'snoozed', label: 'Snoozed', icon: Clock },
