@@ -1,5 +1,8 @@
 import copy
 import logging
+import time
+import uuid
+import re
 from datetime import datetime, timezone
 from collections import Counter
 from typing import List, Optional, Dict, Any
@@ -21,6 +24,8 @@ def _norm(email: Optional[str]) -> str:
 class Database:
     def __init__(self):
         self.emails: Dict[str, EmailItem] = {}
+        # Sent replies, the corpus for personalised drafting.
+        self.sent_replies: Dict[str, List[Dict[str, Any]]] = {}
         self.user_credentials: Dict[str, Dict[str, Any]] = {}
         self.settings: Dict[str, Any] = {
             "demo_mode": False,
@@ -84,7 +89,11 @@ class Database:
         unread_only: bool = False,
         starred_only: bool = False,
         has_attachments: Optional[bool] = None,
-        user_email: Optional[str] = None
+        user_email: Optional[str] = None,
+        tone: Optional[str] = None,
+        from_date: Optional[float] = None,
+        to_date: Optional[float] = None,
+        requires_reply: Optional[bool] = None
     ) -> List[EmailItem]:
         clean_user = _norm(user_email)
         if not clean_user:
@@ -138,6 +147,28 @@ class Database:
                 if not search_hit:
                     continue
             results.append(copy.deepcopy(email))
+
+        if tone:
+            wanted = tone.strip().title()
+            results = [e for e in results
+                       if (e.summary.tone if e.summary else "Neutral") == wanted]
+        if requires_reply is not None:
+            results = [e for e in results
+                       if bool(e.summary and e.summary.requires_reply) == requires_reply]
+
+        # Date range is applied here rather than in SQL because the store is an
+        # in-memory dict; a timestamp of 0 means "no date", so it is excluded
+        # from a bounded range instead of appearing in every one.
+        def _in_range(item) -> bool:
+            ts = float(item.timestamp or 0)
+            if from_date is not None and (ts == 0 or ts < from_date):
+                return False
+            if to_date is not None and (ts == 0 or ts > to_date):
+                return False
+            return True
+
+        if from_date is not None or to_date is not None:
+            results = [e for e in results if _in_range(e)]
 
         results.sort(key=lambda x: x.timestamp, reverse=True)
         return results
@@ -203,6 +234,17 @@ class Database:
         self._sync_email_to_supabase(updated_email)
         return copy.deepcopy(updated_email)
 
+    def purge_email(self, email_id: str, user_email: str) -> bool:
+        """Remove a message permanently, bypassing the trash.
+
+        Distinct from delete_email, which is the reversible transition to
+        trash. Removing something from history has to actually remove it,
+        otherwise it reappears in the history listing.
+        """
+        if not self._owned(email_id, user_email):
+            return False
+        return self.emails.pop(email_id, None) is not None
+
     def delete_email(self, email_id: str, user_email: str = "") -> bool:
         if not self._owned(email_id, user_email):
             return False
@@ -214,6 +256,39 @@ class Database:
                 self.emails[email_id].is_trash = True
             return True
         return False
+
+    # --------------------------------- outgoing mail, the style corpus
+    def add_sent_reply(self, user_email: str, recipient: str, subject: str,
+                       body: str, sent: bool = True) -> Optional[Dict[str, Any]]:
+        """Record a reply the user actually sent.
+
+        This is the only input to style learning. It is deliberately fed by
+        messages that were delivered, not drafts: a draft the user never sent
+        is not evidence of how they write.
+        """
+        owner = _norm(user_email)
+        text = (body or "").strip()
+        if not owner or not text:
+            return None
+        record = {
+            "id": f"rep-{uuid.uuid4().hex[:12]}",
+            "user_email": owner,
+            "to": (recipient or "").strip(),
+            "subject": (subject or "").strip(),
+            "body": text,
+            "sent": bool(sent),
+            "created_at": time.time(),
+        }
+        self.sent_replies.setdefault(owner, []).insert(0, record)
+        # Keep the corpus bounded; older samples add little.
+        del self.sent_replies[owner][200:]
+        return record
+
+    def list_sent_replies(self, user_email: str, limit: int = 100) -> List[Dict[str, Any]]:
+        return list(self.sent_replies.get(_norm(user_email), [])[:limit])
+
+    def sent_reply_count(self, user_email: str) -> int:
+        return len(self.sent_replies.get(_norm(user_email), []))
 
     def add_emails(self, emails: List[EmailItem]) -> int:
         """Store several messages, skipping any without an owner.
@@ -256,6 +331,7 @@ class Database:
         target = _norm(user_email)
         if not target:
             return 0
+        self.sent_replies.pop(target, None)
         doomed = [
             k for k, e in self.emails.items() if _norm(e.user_email) == target
         ]

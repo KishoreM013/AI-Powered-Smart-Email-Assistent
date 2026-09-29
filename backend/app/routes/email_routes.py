@@ -1,15 +1,21 @@
 import logging
+from datetime import datetime, timezone
 import re
 import time
 import random
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.models.schemas import (
+    StyleProfile,
+    Person,
+    MeetingDetails,
+    AnalyzeRequest,
     EmailItem, GenerateReplyRequest, GenerateReplyResponse,
     ComposeEmailRequest, EmailSummary, ActionItem
 )
 from app.database.db import db
 from app.services.gemini_service import gemini_service
+from app.services.style_learner import StyleLearner
 from app.services.gmail_service import gmail_service
 from app.auth.auth_handler import get_current_user, UserProfile
 
@@ -22,26 +28,43 @@ router = APIRouter(prefix="/api/emails", tags=["Emails"])
 # the parameterised ones or FastAPI will treat "analyze" as an email id.
 @router.post("/analyze", response_model=EmailItem)
 async def analyze_pasted_email(
-    payload: dict,
+    payload: AnalyzeRequest,
     current_user: UserProfile = Depends(get_current_user),
 ):
     """Analyse an email the user pasted, then optionally store it.
 
     The message does not have to come from a connected mailbox, which is the
-    point: forwarded threads and text copied out of a screenshot both work.
+    point: forwarded threads, text copied out of a screenshot and mail from a
+    provider you have not linked all work.
     """
-    body = str(payload.get("body") or "").strip()
-    subject = str(payload.get("subject") or "").strip()
+    body = (payload.body or "").strip()
+    subject = (payload.subject or "").strip()
     if not body and not subject:
         raise HTTPException(status_code=400, detail="Provide the email body or subject.")
 
-    sender_email = str(payload.get("sender_email") or "").strip()
-    sender_name = str(payload.get("sender_name") or "").strip() or (
+    sender_email = (payload.sender_email or "").strip().lower()
+    sender_name = (payload.sender_name or "").strip() or (
         sender_email.split("@")[0] if sender_email else "Unknown sender"
     )
 
-    from app.services.gemini import analyze_email_ai
+    from app.services.gemini import analyze_email_ai, analyze_phishing_ai
     analysis = await analyze_email_ai(subject=subject, body=body, sender=sender_name)
+    phishing = await analyze_phishing_ai(subject=subject, body=body, sender=sender_email)
+
+    reply_text = None
+    if payload.generate_reply:
+        tone = payload.tone or analysis.get("tone") or "Professional"
+        reply_text = await generate_reply_for(
+            user_email=current_user.email,
+            subject=subject,
+            body=body,
+            sender_name=sender_name,
+            tone=tone,
+            personalize=payload.personalize,
+        )
+
+    meeting = analysis.get("meeting")
+    is_spam = phishing.get("status") == "Phishing" or analysis["category"] == "Spam"
 
     item = EmailItem(
         id=f"em-pasted-{int(time.time() * 1000)}",
@@ -52,30 +75,39 @@ async def analyze_pasted_email(
         subject=subject or "(no subject)",
         snippet=body[:160],
         body=body,
-        category=analysis.get("category", "Work"),
-        priority=analysis.get("priority", "Medium"),
+        category=analysis["category"],
+        priority=analysis["priority"],
         date=time.strftime("%d %b, %H:%M"),
         timestamp=time.time(),
         is_read=False,
-        is_starred=analysis.get("priority") == "High",
+        is_starred=analysis["priority"] == "High",
+        is_spam=is_spam,
+        folder="spam" if is_spam else "inbox",
         summary=EmailSummary(
-            one_liner=analysis.get("one_liner", subject),
-            bullet_points=analysis.get("bullet_points", []),
-            sentiment=analysis.get("sentiment", "Neutral"),
-            key_deadlines=analysis.get("deadlines", []),
+            one_liner=analysis["one_liner"],
+            bullet_points=analysis["bullet_points"],
+            urgency_reason=analysis.get("urgency_reason"),
+            sentiment=analysis["sentiment"],
+            tone=analysis["tone"],
+            key_deadlines=analysis["deadlines"],
+            dates=analysis["dates"],
+            people=[Person(**x) for x in analysis["people"]],
+            meeting=MeetingDetails(**meeting) if meeting else None,
+            keywords=analysis["keywords"],
+            requires_reply=analysis["requires_reply"],
+            importance_score=analysis["importance_score"],
         ),
         action_items=[
-            ActionItem(task=a.get("task", ""), due_date=a.get("due_date"))
-            for a in analysis.get("action_items", []) if a.get("task")
+            ActionItem(task=a["task"], due_date=a.get("due_date"))
+            for a in analysis["action_items"]
         ],
-        folder="inbox",
+        reply_draft=reply_text,
     )
-    if payload.get("save", True):
+    if payload.save:
         db.add_email(item)
     return item
 
 
-# =================================================================== history
 @router.get("/history", response_model=List[EmailItem])
 def get_history(current_user: UserProfile = Depends(get_current_user)):
     """Everything this account has analysed, newest first."""
@@ -89,7 +121,7 @@ def delete_history_entry(email_id: str, current_user: UserProfile = Depends(get_
     owned = db.get_email_by_id(email_id, current_user.email)
     if not owned or owned.user_email != current_user.email:
         raise HTTPException(status_code=404, detail="Not found")
-    if not db.delete_email(email_id, current_user.email):
+    if not db.purge_email(email_id, current_user.email):
         raise HTTPException(status_code=404, detail="Not found")
     return {"status": "success"}
 
@@ -112,6 +144,101 @@ def get_style_profile(current_user: UserProfile = Depends(get_current_user)):
                 "average_words": 0.0, "formality": 0.0, "language": "en",
                 "uses_emoji": False, "uses_bullets": False,
                 "average_sentence_length": 0.0, "greeting": None, "sign_off": None}
+
+def _parse_date(value: Optional[str]) -> Optional[float]:
+    """Accept ISO-8601, a few common layouts, or epoch seconds.
+
+    Returns None for anything unusable rather than raising, so a malformed
+    date in the query string does not become a 500.
+    """
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%d %b %Y", "%d %B %Y"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+    return None
+
+# ============================================================ style profile
+@router.get("/style-profile", response_model=StyleProfile)
+def get_style_profile(current_user: UserProfile = Depends(get_current_user)):
+    """What the app has learned about how this account writes.
+
+    Returns an honest empty profile when there is nothing to learn from, rather
+    than inventing a style.
+    """
+    learner = StyleLearner(db, current_user.email)
+    profile = learner.build_profile()
+    if not profile.ready:
+        return profile
+    return profile
+
+
+@router.post("/replies/record")
+def record_reply(payload: dict, current_user: UserProfile = Depends(get_current_user)):
+    """Record a reply the user actually sent, so style can learn from it.
+
+    Only delivered mail counts. A draft the user never sent is not evidence of
+    how they write.
+    """
+    body = str(payload.get("body") or "").strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="body is required")
+    db.add_sent_reply(
+        user_email=current_user.email,
+        recipient=str(payload.get("to") or payload.get("recipient") or ""),
+        subject=str(payload.get("subject") or ""),
+        body=body,
+        sent=bool(payload.get("sent", True)),
+    )
+    return {
+        "status": "success",
+        "reply_count": db.sent_reply_count(current_user.email),
+    }
+
+
+
+def _reply_subject(subject: str) -> str:
+    """Re: exactly once, whatever the original subject looked like."""
+    text = (subject or "").strip()
+    return text if text.lower().startswith("re:") else f"Re: {text}"
+
+
+async def generate_reply_for(user_email: str, subject: str, body: str,
+                             sender_name: str, tone: str = "Professional",
+                             personalize: bool = False,
+                             language: str = "en") -> str:
+    """Draft a reply, optionally shaped by the account owner's own style.
+
+    Style is opt-in per request and silently skipped when there is not enough
+    sent mail to learn from, rather than faking a personalisation it cannot
+    support.
+    """
+    style_block = ""
+    if personalize:
+        try:
+            learner = StyleLearner(db, user_email)
+            profile = learner.build_profile()
+            if profile.ready:
+                style_block = learner.guidance(
+                    profile, learner.representative_examples(limit=3)
+                )
+        except Exception as exc:  # never let learning break a reply
+            logger.warning("Style personalisation unavailable: %s", exc)
+            style_block = ""
+
+    from app.services.gemini import generate_smart_reply_ai
+    return await generate_smart_reply_ai(
+        subject=subject, body=body, sender=sender_name,
+        tone=tone, language=language, style_block=style_block,
+    )
+
 
 @router.get("/counts")
 async def get_email_counts(current_user: UserProfile = Depends(get_current_user)):
@@ -141,6 +268,10 @@ async def list_emails(
     unread_only: bool = Query(False),
     starred_only: bool = Query(False),
     has_attachments: Optional[bool] = Query(None),
+    tone: Optional[str] = Query(None),
+    from_date: Optional[str] = Query(None, description="ISO date or epoch seconds, inclusive"),
+    to_date: Optional[str] = Query(None, description="ISO date or epoch seconds, inclusive"),
+    requires_reply: Optional[bool] = Query(None),
     current_user: UserProfile = Depends(get_current_user)
 ):
     all_user_emails = db.get_emails(folder="all", user_email=current_user.email)
@@ -155,6 +286,10 @@ async def list_emails(
         unread_only=unread_only,
         starred_only=starred_only,
         has_attachments=has_attachments,
+          tone=tone,
+          from_date=_parse_date(from_date),
+          to_date=_parse_date(to_date),
+          requires_reply=requires_reply,
         user_email=current_user.email
     )
     return emails
@@ -386,24 +521,46 @@ async def phishing_check(
 @router.get("/{email_id}/suggest-reply")
 async def suggest_reply(
     email_id: str,
-    tone: str = "Professional",
+    tone: Optional[str] = None,
     language: str = "en",
+    personalize: bool = False,
     current_user: UserProfile = Depends(get_current_user),
 ):
     """Draft a reply for an existing thread.
 
-    ``tone`` is optional; the client sends the detected tone of the incoming
-    message so a reply matches the register it received.
+    ``tone`` is optional: when it is not supplied the draft mirrors the
+    register of the incoming message rather than defaulting to Professional.
     """
     email = db.get_email_by_id(email_id, current_user.email)
-    if not email or email.user_email != current_user.email:
+    if not email:
         raise HTTPException(status_code=404, detail="Not found")
-    from app.services.gemini import generate_smart_reply_ai
-    body = await generate_smart_reply_ai(
-        subject=email.subject, body=email.body, sender=email.sender_name,
-        tone=tone or "Professional", language=language,
+
+    chosen = tone or (email.summary.tone if email.summary and email.summary.tone else "Professional")
+    text = await generate_reply_for(
+        user_email=current_user.email,
+        subject=email.subject,
+        body=email.body,
+        sender_name=email.sender_name,
+        tone=chosen,
+        personalize=personalize,
+        language=language,
     )
-    return {"reply_body": body, "reply_text": body, "tone": tone, "language": language}
+    personalised = False
+    notes: List[str] = []
+    if personalize:
+        learner = StyleLearner(db, current_user.email)
+        profile = learner.build_profile()
+        personalised = bool(profile.ready)
+        notes = learner.style_notes(profile)
+    return {
+        "reply_body": text,
+        "reply_text": text,
+        "subject": _reply_subject(email.subject),
+        "tone": chosen,
+        "language": language,
+        "personalized": personalised,
+        "style_notes": notes,
+    }
 
 
 @router.post("/{email_id}/restore", response_model=EmailItem)
