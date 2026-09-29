@@ -31,16 +31,6 @@ app.include_router(ocr_routes.router)
 app.include_router(analytics_routes.router)
 app.include_router(settings_routes.router)
 
-@app.get("/")
-def root():
-    return {
-        "status": "online",
-        "app_name": settings.APP_NAME,
-        "version": "1.0.0",
-        "demo_mode": settings.DEMO_MODE,
-        "docs_url": "/docs"
-    }
-
 @app.get("/api/health")
 def health_check():
     return {
