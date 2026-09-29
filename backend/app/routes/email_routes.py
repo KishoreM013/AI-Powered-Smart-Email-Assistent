@@ -6,6 +6,7 @@ import random
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.models.schemas import (
+    StyleProfile,
     Person,
     MeetingDetails,
     AnalyzeRequest,
@@ -126,23 +127,19 @@ def delete_history_entry(email_id: str, current_user: UserProfile = Depends(get_
 
 
 # =============================================================== style profile
-@router.get("/style-profile")
+@router.get("/style-profile", response_model=StyleProfile)
 def get_style_profile(current_user: UserProfile = Depends(get_current_user)):
     """What the app has learned about how this account writes.
 
-    Returns an honest empty profile when there is nothing to learn from yet,
-    rather than inventing a style.
+    Reads the same store the reply generator reads, so what the UI shows and
+    what the draft actually imitates cannot disagree. It used to call a
+    get_storage() that does not exist and swallow the ImportError, so this
+    endpoint always answered "nothing learned" even with a full corpus.
+
+    An empty corpus is reported as ready=False, not as an invented style.
     """
-    try:
-        from app.services.style_learner import StyleLearner
-        from app.database.storage import get_storage
-        return StyleLearner(get_storage(), current_user.email).build_profile().model_dump()
-    except Exception as exc:
-        logger.info("Style profile unavailable: %s", exc)
-        return {"reply_count": 0, "ready": False, "common_phrases": [],
-                "average_words": 0.0, "formality": 0.0, "language": "en",
-                "uses_emoji": False, "uses_bullets": False,
-                "average_sentence_length": 0.0, "greeting": None, "sign_off": None}
+    learner = StyleLearner(db, current_user.email)
+    return learner.build_profile()
 
 def _parse_date(value: Optional[str]) -> Optional[float]:
     """Accept ISO-8601, a few common layouts, or epoch seconds.

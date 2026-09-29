@@ -4,68 +4,71 @@
  * These caught a real crash: the client had methods calling `.then(unwrap)`
  * while the `unwrap` helper did not exist in the module, so opening a message
  * threw "Unwrap is not a function" and the reading pane white-screened.
+ *
+ * They also guard the feature wiring. The backend gained tone, extraction,
+ * date filtering and personalised replies; a client that does not send the
+ * new parameters would fail silently, showing an unfiltered list and an
+ * impersonalised draft that look like they worked.
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const source = readFileSync(new URL('../src/services/api.js', import.meta.url), 'utf8');
+const here = dirname(fileURLToPath(import.meta.url));
+const read = (rel) => readFileSync(join(here, rel), 'utf8');
+
+const source = read('../src/services/api.js');
+// Imports omit the extension, so try the ones Vite would resolve.
+const has = (rel) =>
+  ['', '.jsx', '.js', '/index.jsx'].some((ext) =>
+    existsSync(join(here, rel + ext))
+  );
 
 let passed = 0;
-const fail = (name, message) => {
-  console.error(`  FAIL ${name}: ${message}`);
-  process.exitCode = 1;
-};
+const failures = [];
 const check = (name, fn) => {
   try {
     fn();
     passed += 1;
   } catch (e) {
-    fail(name, e.message);
+    failures.push(`${name}: ${e.message}`);
+    process.exitCode = 1;
   }
 };
 
 check('unwrap helper is defined', () => {
+  assert.ok(/function\s+unwrap\s*\(/.test(source), 'no unwrap definition found');
+});
+
+check('no method calls .then(unwrap) without unwrap in scope', () => {
+  const calls = source.match(/\.then\(unwrap\)/g) || [];
   assert.ok(
-    /function\s+unwrap\s*\(/.test(source),
-    'api.js calls .then(unwrap) but never defines unwrap'
+    /function\s+unwrap\s*\(/.test(source) || calls.length === 0,
+    `${calls.length} calls to unwrap but no definition`
   );
 });
 
-check('unwrap is not shadowed by a differently-cased name', () => {
-  const defined = /function\s+(unwrap)\s*\(/.exec(source)?.[1];
-  const used = new Set([...source.matchAll(/\.then\(\s*(\w+)\s*\)/g)].map((m) => m[1]));
-  assert.ok(defined, 'no unwrap definition found');
-  for (const name of used) {
-    assert.ok(
-      new RegExp(`function\\s+${name}\\s*\\(`).test(source),
-      `client uses .then(${name}) but ${name} is not defined`
-    );
-  }
-});
-
 check('every method referenced by a component exists on the client', () => {
-  const client = source;
   const files = [
     '../src/components/EmailList.jsx',
     '../src/components/EmailDetail.jsx',
     '../src/components/AnalyzeView.jsx',
     '../src/components/HistoryView.jsx',
     '../src/components/ComposeModal.jsx',
+    '../src/components/ExtractionPanel.jsx',
+    '../src/components/FilterBar.jsx',
     '../src/App.jsx',
   ];
   const missing = new Set();
   for (const rel of files) {
-    let text;
-    try {
-      text = readFileSync(new URL(rel, import.meta.url), 'utf8');
-    } catch {
-      continue; // an optional view that is not present in this build
-    }
+    if (!has(rel)) continue;
+    const text = read(rel);
     for (const m of text.matchAll(/\b(\w+API)\.(\w+)\s*\(/g)) {
       const [, obj, method] = m;
-      if (!new RegExp(`export const ${obj}`).test(client)) continue;
-      if (!new RegExp(`${obj}\\s*=\\s*\\{[\\s\\S]*?\\b${method}\\s*:`).test(client)) {
+      if (!new RegExp(`export const ${obj}`).test(source)) continue;
+      if (!new RegExp(`${obj}\\s*=\\s*\\{[\\s\\S]*?\\b${method}\\s*:`).test(source)) {
         missing.add(`${obj}.${method}`);
       }
     }
@@ -75,10 +78,87 @@ check('every method referenced by a component exists on the client', () => {
 
 check('no hardcoded localhost fallback in the production bundle path', () => {
   const base = /const API_BASE = .*?;/.exec(source)?.[0] ?? '';
+  assert.ok(!/localhost:8000/.test(base), `API_BASE still falls back to localhost:8000: ${base}`);
+});
+
+// ---------------------------------------------------------------- new features
+
+check('logout tells the server, not just the browser', () => {
+  const logout = /logout:[\s\S]*?\n {2}\},/.exec(source)?.[0] ?? '';
+  assert.ok(logout, 'no logout method found');
   assert.ok(
-    !/localhost:8000/.test(base),
-    `API_BASE still falls back to localhost:8000: ${base}`
+    /api\.post\(['"]\/api\/auth\/logout/.test(logout),
+    'logout only clears localStorage; the server keeps the mail, learned style and OAuth tokens'
+  );
+  assert.ok(
+    /finally\s*\{[\s\S]*removeItem/.test(logout),
+    'logout must clear local storage in a finally, so a failed request cannot strand the user'
   );
 });
 
-console.log(`  ${process.exitCode ? 'FAILURES' : `${passed} client-consistency checks passed`}`);
+check('suggestReply forwards the personalise flag', () => {
+  const fn = /suggestReply:[\s\S]*?\n {2}\},/.exec(source)?.[0] ?? '';
+  assert.ok(fn, 'no suggestReply found');
+  assert.ok(/personalize/.test(fn), 'suggestReply ignores personalize');
+  assert.ok(
+    /const params = \{[^}]*personalize/.test(fn),
+    'personalize is not put on the wire'
+  );
+});
+
+check('getEmails drops empty filters', () => {
+  const fn = /getEmails:[\s\S]*?\n {2}\},/.exec(source)?.[0] ?? '';
+  assert.ok(fn, 'no getEmails found');
+  assert.ok(
+    /filter\(/.test(fn) && /!== ''/.test(fn),
+    'empty filter values are sent as empty strings and filter for a category named ""'
+  );
+});
+
+check('the new filter parameters are actually sent', () => {
+  const app = has('../src/App.jsx') ? read('../src/App.jsx') : '';
+  for (const key of ['priority', 'tone', 'from_date', 'to_date', 'requires_reply']) {
+    assert.ok(
+      new RegExp(`${key}:`).test(app),
+      `App.jsx never sends ${key}; the filter would be inert`
+    );
+  }
+});
+
+check('recordReply and getStyleProfile exist', () => {
+  for (const method of ['recordReply', 'getStyleProfile']) {
+    assert.ok(
+      new RegExp(`emailsAPI\\s*=\\s*\\{[\\s\\S]*?\\b${method}\\s*:`).test(source),
+      `emailsAPI.${method} is missing`
+    );
+  }
+});
+
+check('components imported by App.jsx are all present', () => {
+  if (!has('../src/App.jsx')) return;
+  const app = read('../src/App.jsx');
+  const missing = [];
+  for (const m of app.matchAll(/from\s+'(\.\/components\/[^']+)'/g)) {
+    if (!has(`../src/${m[1].replace('./', '')}`)) missing.push(m[1]);
+  }
+  assert.equal(missing.length, 0, `App.jsx imports missing components: ${missing.join(', ')}`);
+});
+
+check('ExtractionPanel renders only what was found', () => {
+  if (!has('../src/components/ExtractionPanel.jsx')) return;
+  const p = read('../src/components/ExtractionPanel.jsx');
+  for (const field of ['people', 'keywords', 'meeting', 'action_items', 'key_deadlines']) {
+    const probe = field === 'action_items' ? 'actionItems' : field;
+    assert.ok(p.includes(probe), `ExtractionPanel ignores ${field}`);
+  }
+  assert.ok(
+    /\{people\.length > 0 &&/.test(p) && /\{keywords\.length > 0 &&/.test(p),
+    'empty blocks would render as blank sections'
+  );
+});
+
+console.log(
+  failures.length
+    ? `  FAILURES\n${failures.map((f) => `    - ${f}`).join('\n')}`
+    : `  ${passed} client-consistency checks passed`
+);

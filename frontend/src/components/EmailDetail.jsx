@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Send, Sparkles, ShieldCheck, ShieldAlert, AlertTriangle,
-  Mail, Edit, RefreshCw, Star, Reply,
+  Mail, Edit, RefreshCw, Star, Reply, UserRound, Info,
 } from 'lucide-react';
 import { emailsAPI } from '../services/api';
+import ExtractionPanel from './ExtractionPanel';
 
 /**
  * Reading pane.
@@ -30,12 +31,17 @@ export default function EmailDetail({
   const [selectedTone, setSelectedTone] = useState('Professional');
   const [phishingStatus, setPhishingStatus] = useState(null);
   const requestId = useRef(0);
+  const [localTasks, setLocalTasks] = useState(null);
+  const [personalize, setPersonalize] = useState(false);
+  const [styleProfile, setStyleProfile] = useState(null);
+  const [styleNotice, setStyleNotice] = useState(null);
 
   // Data loading and generation are untouched.
   useEffect(() => {
     let cancelled = false;
     setReplyText('');
     setPhishingStatus(null);
+    setLocalTasks(null);
     if (!activeEmail?.id) return undefined;
 
     emailsAPI
@@ -46,6 +52,15 @@ export default function EmailDetail({
         if (data.reply_draft) setReplyText(data.reply_draft);
       })
       .catch(() => {});
+
+    emailsAPI
+      .getStyleProfile()
+      .then((profile) => {
+        if (!cancelled) setStyleProfile(profile || null);
+      })
+      .catch(() => {
+        if (!cancelled) setStyleProfile(null);
+      });
 
     emailsAPI
       .phishingCheck(activeEmail.id)
@@ -61,14 +76,57 @@ export default function EmailDetail({
     };
   }, [activeEmail?.id]);
 
+  /**
+   * Tick off an extracted action item.
+   *
+   * The toggle is applied locally first so the click feels instant, then the
+   * server is told. If the call fails the local change is rolled back rather
+   * than left showing a state the backend does not have.
+   */
+  const handleToggleTask = async (taskIdx) => {
+    if (!activeEmail?.id) return;
+    const items = activeEmail.action_items || [];
+    const target = items[taskIdx];
+    if (!target) return;
+
+    const wasDone = Boolean(target.done);
+    setLocalTasks((prev) => {
+      const next = prev ?? items;
+      return next.map((t, i) => (i === taskIdx ? { ...t, done: !wasDone } : t));
+    });
+    try {
+      await emailsAPI.toggleActionItem(activeEmail.id, taskIdx);
+    } catch {
+      setLocalTasks((prev) => {
+        const next = prev ?? items;
+        return next.map((t, i) => (i === taskIdx ? { ...t, done: wasDone } : t));
+      });
+    }
+  };
+
   const handleGenerateReply = async (tone) => {
     if (!activeEmail?.id) return;
     const ticket = ++requestId.current;
     setIsGenerating(true);
     try {
-      const result = await emailsAPI.suggestReply(activeEmail.id, tone, language);
+      const result = await emailsAPI.suggestReply(
+        activeEmail.id, tone, language, personalize
+      );
       if (ticket !== requestId.current) return;
       setReplyText(result.reply_body || result.reply_text || '');
+      // The server reports whether it really had a style to imitate. If it did
+      // not, say so instead of implying the draft is personalised.
+      if (personalize) {
+        setStyleNotice(
+          result.personalized
+            ? null
+            : (language === 'ta'
+                ? 'உங்கள் பதில்கள் இன்னும் போதுமில்லை.'
+                : 'Not enough sent replies yet to learn your style.')
+        );
+      } else {
+        setStyleNotice(null);
+      }
     } catch {
       if (ticket === requestId.current) setReplyText('');
     } finally {
@@ -211,6 +269,13 @@ export default function EmailDetail({
           </section>
         )}
 
+        {/* Extracted names, dates, meeting, tasks and keywords */}
+        <ExtractionPanel
+          summary={summary}
+          actionItems={localTasks ?? activeEmail.action_items}
+          onToggleTask={handleToggleTask}
+        />
+
         {/* Raw message - deliberately the quietest block */}
         <div className="panel px-4 py-4">
           <p className="text-[13.5px] text-slate-600 dark:text-slate-300 leading-[1.75] whitespace-pre-line break-words">
@@ -226,30 +291,63 @@ export default function EmailDetail({
               <span className="section-title">Reply</span>
             </div>
 
-            <div
-              className="inline-flex items-center gap-0.5 p-0.5 rounded-xl"
-              style={{ background: 'rgba(100,116,139,0.08)' }}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !personalize;
+                setPersonalize(next);
+                setSentNotice(null);
+                // Regenerate immediately so the effect of the toggle is
+                // visible, without making the user press generate again.
+                if (next) handleGenerateReply(selectedTone);
+              }}
+              title={
+                styleProfile?.ready
+                  ? `Learned from ${styleProfile.reply_count} of your sent replies`
+                  : 'Learns from replies you send, so drafts match your voice'
+              }
+              aria-pressed={personalize}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                personalize ? 'surface ink shadow-sm' : 'ink-soft hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
             >
-              {['Professional', 'Friendly', 'Short'].map((tone) => (
-                <button
-                  key={tone}
-                  onClick={() => {
-                    setSelectedTone(tone);
-                    handleGenerateReply(tone);
-                  }}
-                  className={`px-2.5 py-1.5 rounded-[10px] text-[11px] font-semibold transition ${
-                    selectedTone === tone ? 'surface ink shadow-sm' : 'ink-soft hover:text-slate-700 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {language === 'ta'
-                    ? { Professional: 'தொழில்', Friendly: 'நட்பு', Short: 'சுருக்கம்' }[tone]
-                    : tone}
-                </button>
-              ))}
+              <UserRound className="w-3 h-3" />
+              {language === 'ta' ? 'என் பெயரில்' : 'In my voice'}
+              {styleProfile?.ready && <span className="w-1.5 h-1.5 rounded-full accent-bg" />}
+            </button>
+
+            <div className="flex items-center gap-2">
+              <div
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-xl"
+                style={{ background: 'rgba(100,116,139,0.08)' }}
+              >
+                {['Professional', 'Friendly', 'Short'].map((tone) => (
+                  <button
+                    key={tone}
+                    onClick={() => {
+                      setSelectedTone(tone);
+                      handleGenerateReply(tone);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-[10px] text-[11px] font-semibold transition ${
+                      selectedTone === tone ? 'surface ink shadow-sm' : 'ink-soft hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {language === 'ta'
+                      ? { Professional: 'தொழில்', Friendly: 'நட்பு', Short: 'சுருக்கம்' }[tone]
+                      : tone}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <div className="p-4 space-y-3">
+            {styleNotice && (
+              <p className="text-[11.5px] ink-soft flex items-center gap-1.5">
+                <Info className="w-3 h-3 shrink-0 opacity-70" />
+                {styleNotice}
+              </p>
+            )}
             <div className="relative">
               <textarea
                 value={replyText}

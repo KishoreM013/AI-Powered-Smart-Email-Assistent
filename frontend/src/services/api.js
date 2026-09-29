@@ -107,9 +107,25 @@ export const authAPI = {
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('smart_email_token');
-    localStorage.removeItem('smart_email_user');
+  /**
+   * Sign out.
+   *
+   * The local token is always dropped, even if the call fails, so a network
+   * error can never leave someone stuck in a signed-in-looking state. The
+   * server-side wipe is best effort for the same reason: a local sign-out that
+   * fails is worse than one that leaves data behind for the timeout to take.
+   */
+  logout: async () => {
+    try {
+      if (localStorage.getItem('smart_email_token')) {
+        await api.post('/api/auth/logout');
+      }
+    } catch {
+      // Deliberately ignored; see above.
+    } finally {
+      localStorage.removeItem('smart_email_token');
+      localStorage.removeItem('smart_email_user');
+    }
   }
 };
 
@@ -124,8 +140,15 @@ export const emailsAPI = {
   },
 
   getEmails: async (params = {}) => {
+    // Empty values are stripped rather than sent: ?tone=&priority= would be
+    // truthy on the server and filter for a category named "".
+    const clean = Object.fromEntries(
+      Object.entries(params).filter(
+        ([, v]) => v !== null && v !== undefined && v !== ''
+      )
+    );
     try {
-      const res = await api.get('/api/emails', { params });
+      const res = await api.get('/api/emails', { params: clean });
       return res.data;
     } catch (e) {
       return [];
@@ -202,12 +225,35 @@ export const emailsAPI = {
    * Draft a reply for an existing thread.
    * `tone` is optional: the server falls back to the detected tone.
    */
-  suggestReply: (emailId, tone, language = 'en') => {
-    const params = { language };
+  /**
+   * Draft a reply for an existing thread.
+   *
+   * `tone` is optional: the server falls back to the tone it detected on the
+   * incoming message. `personalize` opts in to drafting in the account
+   * owner's own learned style, and the server reports back whether it
+   * actually had enough sent mail to imitate.
+   */
+  suggestReply: (emailId, tone, language = 'en', personalize = false) => {
+    const params = { language, personalize };
     if (tone) params.tone = tone;
     return api
       .get(`/api/emails/${encodeURIComponent(emailId)}/suggest-reply`, { params })
       .then(unwrap);
+  },
+
+  /**
+   * Record a reply the user actually sent, so their style can be learned.
+   *
+   * Only delivered mail is worth learning from, which is why this is called on
+   * send rather than on generate.
+   */
+  recordReply: async ({ to, subject, body, sent = true }) => {
+    try {
+      const res = await api.post('/api/emails/replies/record', { to, subject, body, sent });
+      return res.data;
+    } catch {
+      return { status: 'error', reply_count: 0 };
+    }
   },
 
   toggleActionItem: async (emailId, taskIdx) => {

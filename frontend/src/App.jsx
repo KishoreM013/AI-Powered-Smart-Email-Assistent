@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
+import FilterBar from './components/FilterBar';
 import EmailList from './components/EmailList';
 import EmailDetail from './components/EmailDetail';
 import AIAssistantPanel from './components/AIAssistantPanel';
@@ -63,6 +64,13 @@ export default function App() {
   const [activeFolder, setActiveFolder] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState({
+    priority: null,
+    tone: null,
+    from_date: null,
+    to_date: null,
+    requires_reply: false,
+  });
 
   // Email Data
   const [emails, setEmails] = useState([]);
@@ -102,6 +110,11 @@ export default function App() {
         folder: targetFolder,
         category: selectedCategory,
         search: searchQuery || undefined,
+        priority: filters.priority,
+        tone: filters.tone,
+        from_date: filters.from_date,
+        to_date: filters.to_date,
+        requires_reply: filters.requires_reply ? true : undefined,
       });
       setEmails(data || []);
       if (data && data.length > 0) {
@@ -121,7 +134,7 @@ export default function App() {
     if (activeView === 'inbox') {
       loadEmails();
     }
-  }, [user, activeFolder, selectedCategory, searchQuery, activeView]);
+  }, [user, activeFolder, selectedCategory, searchQuery, activeView, filters]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -167,16 +180,25 @@ export default function App() {
     showToast(`Welcome back, ${userObj.name || 'User'}! Inbox synchronized.`);
   };
 
-  const handleLogout = () => {
-    authAPI.logout();
-    localStorage.removeItem('smart_email_user');
-    localStorage.removeItem('smart_email_token');
+  /**
+   * Sign out.
+   *
+   * The interface updates immediately rather than after the server call, so
+   * the button never feels stuck. authAPI.logout clears the local token in a
+   * finally block, so the user ends up signed out locally either way.
+   */
+  const handleLogout = async () => {
     setUser(null);
     setEmails([]);
     setSelectedEmail(null);
     setShowLandingPage(true);
     setShowLoginModal(true);
     showToast("Signed out successfully.");
+    try {
+      await authAPI.logout();
+    } catch {
+      // Nothing to do: the session is already gone from this browser.
+    }
   };
 
   // Handle Voice Commands:
@@ -264,7 +286,10 @@ export default function App() {
           activeFolder={activeFolder}
           setActiveFolder={setActiveFolder}
           selectedCategory={selectedCategory}
-          setSelectedCategory={setSelectedCategory}
+          setSelectedCategory={(v) => {
+            setSelectedCategory(v);
+            setFilters((f) => ({ ...f, category: v }));
+          }}
           unreadCount={emails.filter(e => !e.is_read).length}
           urgentCount={emails.filter(e => e.priority === 'High').length}
           folderCounts={folderCounts}
@@ -280,6 +305,11 @@ export default function App() {
           <div className="flex-1 flex overflow-hidden">
             {/* Center Email List Feed */}
             <div className="w-full md:w-[42%] lg:w-[38%] xl:w-[34%] flex-shrink-0 flex flex-col h-full border-r line">
+              <FilterBar
+                filters={{ ...filters, category: selectedCategory }}
+                onChange={setFilters}
+                resultCount={emails.length}
+              />
               <EmailList
                 activeFolder={activeFolder}
                 emails={emails}
