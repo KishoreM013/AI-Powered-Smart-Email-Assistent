@@ -1,0 +1,22 @@
+# Railway config for the FastAPI backend.
+#
+# A volume is declared because the SQLite store must survive restarts; without
+# it Railway's ephemeral filesystem loses every analysed email on redeploy.
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[[services]]
+protocol = "tcp"
+processHealthCheck = true
+processHealthCheckInterval = 30
+
+[[volumes]]
+mountPath = "/data"
