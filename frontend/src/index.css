@@ -17,6 +17,8 @@
     --line: #e8eaef;
     --ink: #0f172a;
     --ink-soft: #64748b;
+    /* For small uppercase labels that should sit back, not compete. */
+    --ink-faint: #94a3b8;
     --accent: #4f46e5;
     --accent-soft: #eef2ff;
   }
@@ -27,6 +29,8 @@
     --line: #222836;
     --ink: #eef1f6;
     --ink-soft: #8b93a5;
+    /* Dimmer than ink-soft but still legible on the dark canvas. */
+    --ink-faint: #6f7789;
     --accent: #818cf8;
     --accent-soft: #1b1f35;
   }
@@ -291,6 +295,9 @@ html.dark ::-webkit-scrollbar-thumb {
   }
   .ink-soft {
     color: var(--ink-soft);
+  }
+  .ink-faint {
+    color: var(--ink-faint);
   }
   .accent-text {
     color: var(--accent);

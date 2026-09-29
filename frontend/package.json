@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node ./tests/api-client.test.mjs",
+    "test": "node ./tests/api-client.test.mjs && node ./tests/design-system.test.mjs",
     "test:legacy": "node ./tests/legacy-smoke.mjs"
   },
   "dependencies": {

@@ -38,7 +38,7 @@ export default function VoiceCommandModal({ isOpen, onClose, onExecuteCommand })
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in select-none">
+    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-in select-none">
       <div className="bg-[#0B0E1A] border border-indigo-500/30 rounded-3xl max-w-md w-full p-6 shadow-2xl relative flex flex-col items-center text-center space-y-6">
         
         {/* Top Close Button & Title */}
