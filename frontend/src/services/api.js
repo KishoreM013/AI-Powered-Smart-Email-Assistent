@@ -64,7 +64,7 @@ export const authAPI = {
     const rawUser = res.data?.user || {};
     const user = {
       id: rawUser.id || 'usr-g-1',
-      email: rawUser.email || payload.email || 'user@gmail.com',
+      email: rawUser.email || payload.email || '',
       name: rawUser.name || payload.name || (payload.email ? payload.email.split('@')[0] : 'User'),
       avatar: rawUser.avatar || rawUser.picture || payload.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${payload.email || 'User'}`,
       connected_gmail: true
@@ -89,10 +89,6 @@ export const authAPI = {
     };
     localStorage.setItem('smart_email_user', JSON.stringify(user));
     return { ...res.data, user };
-  },
-
-  demoLogin: async (payload = {}) => {
-    return authAPI.googleLogin(payload);
   },
 
   getMe: async () => {
@@ -235,7 +231,7 @@ export const emailsAPI = {
         id: "msg_sent_" + Date.now(),
         thread_id: "th_sent_" + Date.now(),
         sender_name: `${data.sender_name || savedUser.name || 'You'}`,
-        sender_email: data.sender_email || savedUser.email || 'user@gmail.com',
+        sender_email: data.sender_email || savedUser.email || '',
         recipient_email: data.recipient,
         subject: data.subject,
         date: "Just now",

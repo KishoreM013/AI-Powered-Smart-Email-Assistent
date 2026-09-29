@@ -1,7 +1,7 @@
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from app.auth.auth_handler import create_access_token, create_token_for_user, get_current_user, DEMO_USER
+from app.auth.auth_handler import create_access_token, create_token_for_user, get_current_user
 from app.models.schemas import Token, UserProfile, GoogleLoginRequest, AuthConfigResponse, IMAPLoginRequest
 from app.services.gmail_service import gmail_service
 from app.services.imap_service import imap_service
@@ -69,16 +69,6 @@ async def imap_login(req: IMAPLoginRequest):
 
     token = create_token_for_user(user_profile)
     return Token(access_token=token, token_type="bearer", user=user_profile)
-
-@router.post("/demo-login", response_model=Token)
-async def demo_login():
-    """1-Click instant demo authentication token."""
-    try:
-        await gmail_service.sync_inbox(user_email=DEMO_USER.email, user_name=DEMO_USER.name)
-    except Exception as e:
-        print(f"[demo_login] Inbox sync notice: {e}")
-    token = create_token_for_user(DEMO_USER)
-    return Token(access_token=token, token_type="bearer", user=DEMO_USER)
 
 @router.get("/callback")
 async def oauth_callback(code: str = Query(None), error: str = Query(None)):

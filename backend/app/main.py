@@ -53,6 +53,17 @@ def health_check():
 # involved. Registered last on purpose: the catch-all must not shadow the API
 # routes above, and unknown /api paths must 404 rather than return index.html.
 # ---------------------------------------------------------------------------
+# An unknown /api path is a 404 whatever the method. Without this the SPA
+# catch-all below would claim the path for GET only and report 405 for the
+# rest, which reads as "wrong method" rather than "this endpoint is gone".
+@app.api_route(
+    "/api/{rest:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def api_not_found(rest: str):
+    raise HTTPException(status_code=404, detail="Not Found")
+
 _DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 if _DIST.is_dir():

@@ -18,7 +18,7 @@ export default function SettingsModal({ isOpen, onClose, user, theme, onToggleTh
   };
 
   const userName = user?.name || (user?.email ? user.email.split('@')[0] : "User");
-  const userEmail = user?.email || "user@gmail.com";
+  const userEmail = user?.email || '';
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in select-none">

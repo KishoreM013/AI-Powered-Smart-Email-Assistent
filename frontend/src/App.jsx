@@ -15,18 +15,16 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { emailsAPI, authAPI } from './services/api';
 
-const DEFAULT_USER = {
-  id: "usr-user-01",
-  email: "user@gmail.com",
-  name: "User Account",
-  avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=UserAccount",
-  connected_gmail: true
-};
-
 export default function App() {
+  // No default account. If there is no stored session the user is signed out
+  // and must sign in; the workspace is never shown to an anonymous visitor.
   const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('smart_email_user');
-    return saved ? JSON.parse(saved) : DEFAULT_USER;
+    try {
+      const saved = localStorage.getItem('smart_email_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
 
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -215,7 +213,10 @@ export default function App() {
     trash: serverCounts?.trash ?? emails.filter(e => e.folder === 'trash' || e.is_trash).length,
   };
 
-  if (showLandingPage && !user) {
+  // Sign-in gate. Without a session the visitor gets the landing page, or the
+  // sign-in screen if they asked for it. The mail workspace below is only
+  // reachable once an account is actually authenticated.
+  if (!user) {
     if (showLoginModal) {
       return <LoginPage onLoginSuccess={handleLoginSuccess} />;
     }
