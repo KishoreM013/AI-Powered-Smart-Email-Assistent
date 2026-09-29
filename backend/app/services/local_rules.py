@@ -96,20 +96,58 @@ def rule_keywords(text: str, limit: int = 6) -> List[str]:
     return repeated or [w for w, _ in ranked[:limit]]
 
 
+def _looks_like_a_name(value: str) -> bool:
+    """Two or more capitalised words, or one capitalised word of reasonable length.
+
+    Deliberately strict. An address such as "notifications@acme.co" or a role
+    such as "Support" is not a person, and listing them under "People" is worse
+    than listing nothing.
+    """
+    value = value.strip(" .,-")
+    if not value or "@" in value or any(ch.isdigit() for ch in value):
+        return False
+    parts = value.split()
+    if not 1 <= len(parts) <= 4:
+        return False
+    if not all(p[:1].isupper() for p in parts):
+        return False
+    return all(p.isalpha() and len(p) > 1 for p in parts)
+
+
 def rule_people(body: str, sender: str) -> List[Dict[str, Any]]:
-    """Names from the signature block and salutation lines."""
+    """Names from the signature block and salutation lines.
+
+    Only what the message actually contains. A sender field holding a bare
+    address is skipped rather than shown as a person, and the salutation
+    keywords are matched case-insensitively, because "Regards," is how most
+    people sign off and a case-sensitive pattern missed every one of them.
+    """
     people: List[Dict[str, Any]] = []
     if sender:
         head = re.split(r"[<(]", sender.strip())[0].strip(" \"'")
-        if len(head) > 1:
+        if _looks_like_a_name(head):
             people.append({"name": head, "role": None, "email": None})
-    pattern = (r"\b(?:hi|hello|dear|thanks|thank you|regards)[,\s]+"
-               r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
-    for match in re.finditer(pattern, body):
-        name = match.group(1)
-        if name.lower() in {"all", "there", "team"}:
+    # The keywords are matched case-insensitively, because "Regards," is
+    # capitalised in almost every real email and a case-sensitive pattern
+    # missed all of them. The captured name is matched case-SENSITIVELY via
+    # (?-i:...), because a global ignorecase also lets [A-Z] match a lowercase
+    # word -- which is how "Best regards" ended up yielding the name
+    # "regards". "best" and "kind" are deliberately absent: they are the first
+    # half of two-word sign-offs, not greetings.
+    # An optional honorific is allowed and then dropped, so "Dr Priya Raman"
+    # yields "Priya Raman" rather than the truncated "Dr Priya".
+    pattern = (r"\b(?:hi|hello|dear|thanks|thank you|regards|cheers|sincerely|"
+               r"yours|best regards|kind regards|warm regards)\b"
+               r"[,\s]+((?-i:(?:Dr|Mr|Mrs|Ms|Prof|Miss)\.?\s+)?"
+               r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)")
+    for match in re.finditer(pattern, body, re.IGNORECASE):
+        name = re.sub(r"^(?:Dr|Mr|Mrs|Ms|Prof|Miss)\.?\s+", "",
+                      match.group(1).strip())
+        if not _looks_like_a_name(name):
             continue
-        if any(p["name"] == name for p in people):
+        if name.lower() in {"all", "there", "team", "sir", "madam", "morning"}:
+            continue
+        if any(p["name"].lower() == name.lower() for p in people):
             continue
         people.append({"name": name, "role": None, "email": None})
         if len(people) >= 6:
@@ -148,6 +186,45 @@ def rule_action_items(body: str, deadlines: List[str]) -> List[Dict[str, Any]]:
     return items
 
 
+# Scheduling language. "Can we meet on Friday" is the commonest way to propose
+# a meeting in English and was missing here, which is how a scheduled email
+# ended up categorised as plain Work with no meeting block whenever the model
+# was unavailable.
+_MEETING_MARKERS = (
+    "can we meet", "can you meet", "could we meet", "meet on", "meeting on",
+    "let's meet", "lets meet", "shall we meet", "schedule a call",
+    "set up a call", "schedule a meeting", "book a time", "book a call",
+    "are you free", "does this time work", "does that time work",
+    "calendar invite", "invitation to join", "zoom", "google meet",
+    "teams meeting", "webex", "hop on a call", "jump on a call", "catch up",
+    "1:1", "one on one", "standup", "stand-up", "sync on", "check-in",
+)
+
+# A clock time, used only when the text states one. The second alternative
+# requires an am/pm marker, so "the top 4 items" is not read as 4pm.
+_TIME = re.compile(
+    r"\b(?:at\s+)?([01]?\d|2[0-3])[:.]([0-5]\d)\s*(am|pm)?\b"
+    r"|\b([01]?\d|2[0-3])\s*(am|pm)\b"
+)
+
+
+def rule_time(text: str) -> Optional[str]:
+    """A clock time stated in the message, or None.
+
+    Returns the form a reader would recognise ("4pm", "16:30") rather than a
+    normalised 24-hour value, so the UI shows what the email actually said.
+    """
+    m = _TIME.search(text)
+    if not m:
+        return None
+    if m.group(1) and m.group(2):
+        suffix = (" " + m.group(3)) if m.group(3) else ""
+        return f"{m.group(1)}:{m.group(2)}{suffix}"
+    if m.group(4) and m.group(5):
+        return f"{m.group(4)}{m.group(5)}"
+    return None
+
+
 def _classify(text: str, sender_l: str):
     """Return (category, priority, sentiment) from keyword rules."""
     if (any(m in text for m in _SPAM_MARKERS)
@@ -166,9 +243,7 @@ def _classify(text: str, sender_l: str):
     if any(k in text for k in ("you're invited", "you are invited", "rsvp",
                                "save the date", "webinar", "you're welcome")):
         return "Invitation", "Medium", "Positive"
-    if any(k in text for k in ("schedule a call", "let's meet", "lets meet",
-                               "calendar invite", "meeting on", "zoom", "google meet",
-                               "are you free", "book a time")):
+    if any(k in text for k in _MEETING_MARKERS):
         return "Meeting", "Medium", "Neutral"
     if any(k in text for k in ("family", "mom", "dad", "weekend", "dinner", "vacation")):
         return "Personal", "Medium", "Positive"
@@ -198,7 +273,7 @@ def local_analysis(subject: str, body: str, sender: str) -> Dict[str, Any]:
             "is_meeting": category == "Meeting",
             "title": (subject[:80] or None),
             "date": dates[0] if dates else None,
-            "time": None,
+            "time": rule_time(text),
             "location": None,
             "platform": next((p for p in ("zoom", "google meet", "teams", "webex")
                               if p in text), None),

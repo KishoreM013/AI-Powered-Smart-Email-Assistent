@@ -13,6 +13,7 @@ from app.models.schemas import (
     EmailItem, GenerateReplyRequest, GenerateReplyResponse,
     ComposeEmailRequest, EmailSummary, ActionItem
 )
+from app.config import settings
 from app.database.db import db
 from app.services.gemini_service import gemini_service
 from app.services.style_learner import StyleLearner
@@ -26,7 +27,7 @@ router = APIRouter(prefix="/api/emails", tags=["Emails"])
 # ================================================================ analyse any
 # Registered above the /{email_id} routes: static paths must be matched before
 # the parameterised ones or FastAPI will treat "analyze" as an email id.
-@router.post("/analyze", response_model=EmailItem)
+@router.post("/analyze")
 async def analyze_pasted_email(
     payload: AnalyzeRequest,
     current_user: UserProfile = Depends(get_current_user),
@@ -105,7 +106,20 @@ async def analyze_pasted_email(
     )
     if payload.save:
         db.add_email(item)
-    return item
+
+    # The stored message plus the verdict. Returned as a plain dict because the
+    # phishing result is not part of EmailItem, and response_model would strip
+    # it -- the warning banner would then never appear.
+    return {
+        **item.model_dump(),
+        "phishing": phishing,
+        "engine": "local_rules" if not settings_is_live() else "gemini",
+        "saved": bool(payload.save),
+    }
+
+
+def settings_is_live() -> bool:
+    return bool(getattr(settings, "GEMINI_API_KEY", "")) and not settings.is_demo
 
 
 @router.get("/history", response_model=List[EmailItem])
