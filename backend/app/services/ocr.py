@@ -1,3 +1,4 @@
+from app.services.model_registry import build_model
 import logging
 from io import BytesIO
 from pypdf import PdfReader
@@ -66,7 +67,7 @@ async def run_gemini_multimodal_ocr(file_bytes: bytes, filename: str, mime_type:
         return "[Gemini API Key missing. OCR transcription unavailable.]"
     try:
         # Use Gemini to transcribe the image or PDF bytes
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = build_model()
         response = model.generate_content([
             {
                 "mime_type": mime_type,
@@ -83,7 +84,7 @@ async def summarize_text_content(text: str, filename: str) -> str:
     if not settings.GEMINI_API_KEY:
         return f"Summary of {filename}: Key items details present in the attachment text."
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = build_model()
         response = model.generate_content(f"Provide a short 2-3 sentence summary of the following document content:\n\n{text[:8000]}")
         return response.text.strip()
     except Exception as e:

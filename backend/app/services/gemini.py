@@ -1,3 +1,4 @@
+from app.services.model_registry import build_model
 import json
 import logging
 from typing import Dict, Any
@@ -56,7 +57,7 @@ async def analyze_email_ai(subject: str, body: str, sender: str) -> Dict[str, An
     """
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = build_model()
         response = model.generate_content(prompt)
         text = response.text.strip()
         
@@ -112,7 +113,7 @@ async def analyze_phishing_ai(subject: str, body: str, sender: str, language: st
         }}
         """
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = build_model()
             res = model.generate_content(prompt)
             txt = res.text.strip()
             if txt.startswith("```json"):
@@ -147,7 +148,7 @@ async def generate_smart_reply_ai(subject: str, body: str, sender: str, tone: st
     Keep it concise, helpful, and realistic. Return ONLY the body text of the reply in {"Tamil" if language == "ta" else "English"}.
     """
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = build_model()
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
@@ -180,7 +181,7 @@ async def check_is_spam_ai(subject: str, body: str, sender: str) -> Dict[str, An
         Sender: {sender}
         """
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = build_model()
             res = model.generate_content(prompt)
             txt = res.text.strip()
             if txt.startswith("```json"):

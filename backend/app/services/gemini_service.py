@@ -1,3 +1,4 @@
+from app.services.model_registry import build_model
 import os
 import json
 import re
@@ -22,7 +23,7 @@ class GeminiAIService:
         if HAS_GENAI and self.api_key and len(self.api_key.strip()) > 5:
             try:
                 genai.configure(api_key=self.api_key.strip())
-                self.model = genai.GenerativeModel("gemini-1.5-flash")
+                self.model = build_model()
             except Exception as e:
                 print(f"[GeminiAIService] Error initializing Gemini API: {e}")
                 self.model = None
