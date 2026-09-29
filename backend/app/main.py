@@ -14,7 +14,11 @@ app = FastAPI(
 # Setup CORS for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for dev/sandbox ease
+    # The configured allowlist, not a wildcard. "*" plus allow_credentials
+    # makes the browser reject credentialed requests outright, while still
+    # letting any site call every unauthenticated endpoint.
+    allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
