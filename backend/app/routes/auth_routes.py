@@ -36,47 +36,6 @@ def get_login_url():
         "is_live_configured": is_live
     }
 
-@router.post("/google-login", response_model=Token)
-async def google_login(req: GoogleLoginRequest):
-    """
-    Authenticate with Google OAuth token or Google Account Profile.
-    Supports live Google Identity tokens and interactive sandbox account selection.
-    """
-    raw_email = req.email if (req.email and isinstance(req.email, str)) else "user@gmail.com"
-    email_clean = raw_email.strip().lower()
-    
-    if req.name and isinstance(req.name, str) and req.name.strip():
-        name = req.name.strip()
-    else:
-        username_part = email_clean.split("@")[0]
-        name = " ".join([part.capitalize() for part in username_part.replace("_", ".").replace("-", ".").split(".")])
-    
-    if req.avatar and isinstance(req.avatar, str) and req.avatar.strip():
-        avatar = req.avatar.strip()
-    else:
-        seed = hashlib.md5(email_clean.encode()).hexdigest()[:8]
-        avatar = f"https://api.dicebear.com/7.x/bottts/svg?seed={seed}"
-
-    user_id = f"usr-g-{hashlib.md5(email_clean.encode()).hexdigest()[:8]}"
-    
-    user_profile = UserProfile(
-        id=user_id,
-        email=email_clean,
-        name=name,
-        avatar=avatar,
-        is_demo=bool(req.is_demo),
-        connected_gmail=True
-    )
-
-    # Sync user's inbox on login so emails are ready immediately
-    try:
-        await gmail_service.sync_inbox(user_email=email_clean, user_name=name)
-    except Exception as e:
-        print(f"[google_login] Inbox sync notice: {e}")
-
-    token = create_token_for_user(user_profile)
-    return Token(access_token=token, token_type="bearer", user=user_profile)
-
 @router.post("/imap-login", response_model=Token)
 async def imap_login(req: IMAPLoginRequest):
     """

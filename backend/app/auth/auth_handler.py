@@ -46,13 +46,27 @@ def create_token_for_user(user: UserProfile, expires_delta: Optional[timedelta] 
     )
 
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> UserProfile:
+    """Resolve the caller, or reject the request.
+
+    Fails closed. It used to fall back to DEMO_USER when the token was
+    missing or invalid, so an unauthenticated request was served as a shared
+    demo account instead of being refused.
+    """
     if not credentials or not credentials.credentials:
-        return DEMO_USER
-    
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token = credentials.credentials
     payload = decode_access_token(token)
     if not payload:
-        return DEMO_USER
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     return UserProfile(
         id=payload.get("sub", DEMO_USER.id),
