@@ -2,6 +2,7 @@ import React from 'react';
 import {
   Inbox, Star, Send, FileText, AlertTriangle, Trash2,
   Bot, MessageSquare, ShieldCheck, Mic, Bookmark, Mail, BarChart3,
+  ScanText, History,
 } from 'lucide-react';
 
 /**
@@ -95,6 +96,20 @@ export default function Sidebar({
                 </button>
               );
             })}
+            <button
+              onClick={() => setActiveView('analyze')}
+              className={`nav-item ${activeView === 'analyze' ? 'nav-item-active' : ''}`}
+            >
+              <ScanText className="w-[18px] h-[18px] shrink-0" />
+              <span className="truncate">Analyse any email</span>
+            </button>
+            <button
+              onClick={() => setActiveView('history')}
+              className={`nav-item ${activeView === 'history' ? 'nav-item-active' : ''}`}
+            >
+              <History className="w-[18px] h-[18px] shrink-0" />
+              <span className="truncate">Email history</span>
+            </button>
             <button
               onClick={() => setActiveView('analytics')}
               className={`nav-item ${activeView === 'analytics' ? 'nav-item-active' : ''}`}

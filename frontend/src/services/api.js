@@ -2,6 +2,12 @@ import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Axios resolves with the full response; the rest of the app wants the body.
+// Every helper below goes through this one function.
+function unwrap(response) {
+  return response.data;
+}
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: {

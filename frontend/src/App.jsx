@@ -8,6 +8,8 @@ import VoiceCommandModal from './components/VoiceCommandModal';
 import PhishingDetectionModal from './components/PhishingDetectionModal';
 import AISummaryModal from './components/AISummaryModal';
 import OCRScanner from './components/OCRScanner';
+import AnalyzeView from './components/AnalyzeView';
+import HistoryView from './components/HistoryView';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ComposeModal from './components/ComposeModal';
 import SettingsModal from './components/SettingsModal';
@@ -316,6 +318,22 @@ export default function App() {
               />
             </div>
           </div>
+        )}
+
+        {activeView === 'analyze' && (
+          <AnalyzeView
+            language={language}
+            onOpenEmail={setSelectedEmail}
+            onHistoryChanged={loadEmails}
+          />
+        )}
+
+        {activeView === 'history' && (
+          <HistoryView
+            language={language}
+            onOpenEmail={setSelectedEmail}
+            onChanged={loadEmails}
+          />
         )}
 
         {activeView === 'ocr' && (
