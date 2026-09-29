@@ -1,11 +1,15 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
+from app.middleware.rate_limit import hit
 from app.routes import auth_routes, email_routes, ocr_routes, analytics_routes, settings_routes
+
+logger = logging.getLogger("smart_email_assistant")
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -28,6 +32,71 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auth endpoints mint credentials, so they get the tightest budget.
+_RATE_LIMITED_PATHS = {"/api/auth/exchange", "/api/auth/imap-login", "/api/auth/callback"}
+_AUTH_LIMIT = 10
+_AUTH_WINDOW = 60
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Baseline hardening headers on every response.
+
+    A browser rendering a JSON API does not need most of these, but the SPA
+    and the OAuth callback are both served from here, so they do.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-XSS-Protection", "0")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    # This server also serves the SPA, so a CSP is worth having. It is sent in
+    # every environment so the policy can actually be tested, but relaxed in
+    # development because the Vite dev server needs inline scripts and eval
+    # for hot reload.
+    if settings.ENVIRONMENT == "production":
+        csp = (
+            "default-src 'self'; script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
+            "font-src 'self' data:; connect-src 'self'; form-action 'self'; "
+            "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+        )
+    else:
+        csp = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; "
+            "font-src 'self' data:; connect-src 'self' ws: wss: http://localhost:* "
+            "http://127.0.0.1:*; form-action 'self'; frame-ancestors 'none'; "
+            "base-uri 'self'; object-src 'none'"
+        )
+    response.headers.setdefault("Content-Security-Policy", csp)
+
+    if settings.ENVIRONMENT == "production":
+        # Only meaningful once everything is served over TLS.
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
+@app.middleware("http")
+async def rate_limit(request, call_next):
+    """Coarse per-IP limit to blunt scripted abuse of the auth endpoints.
+
+    Per-user limits on the expensive AI paths are applied by the routes, where
+    the authenticated account is known and the budget can be tighter.
+    """
+    if request.url.path in _RATE_LIMITED_PATHS:
+        client = request.client.host if request.client else "unknown"
+        allowed, retry_after = hit(f"ip:{client}", _AUTH_LIMIT, _AUTH_WINDOW)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many attempts. Try again shortly."},
+                headers={"Retry-After": str(retry_after)},
+            )
+    return await call_next(request)
+
 # Register sub-routers
 app.include_router(auth_routes.router)
 app.include_router(email_routes.router)
@@ -37,13 +106,20 @@ app.include_router(settings_routes.router)
 
 @app.get("/api/health")
 def health_check():
+    """Liveness plus configuration *status*, never configuration values.
+
+    Booleans only. Knowing whether a credential is present is enough to
+    diagnose a misconfigured deployment; knowing the credential is not.
+    """
     return {
         "status": "healthy",
-        "services": {
-            "api": "online",
-            "database": "ready",
-            "ai_engine": "active"
-        }
+        "services": {"api": "online", "database": "ready", "ai_engine": "active"},
+        "auth": {
+            "google_oauth": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
+            "demo_mode": bool(settings.DEMO_MODE),
+        },
+        "ai": {"gemini_key": bool((settings.GEMINI_API_KEY or "").strip())},
+        "environment": settings.ENVIRONMENT,
     }
 
 # ---------------------------------------------------------------------------

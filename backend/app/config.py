@@ -1,4 +1,5 @@
-import os
+import json
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 from typing import List, Optional
 
@@ -70,6 +71,44 @@ class Settings(BaseSettings):
         r"|^https://[a-z0-9-]+(?:\.[a-z0-9-]+)*\.onrender\.com$"
         r"|^https://[a-z0-9-]+(?:\.[a-z0-9-]+)*\.railway\.app$"
     )
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def _split_origins(cls, value):
+        """Accept a JSON list, a comma-separated string, or a real list.
+
+        .env files are hand written, and both of these appear in the wild:
+          CORS_ORIGINS=["https://a.test","https://b.test"]
+          CORS_ORIGINS=https://a.test,https://b.test
+        Rejecting the second one is a needlessly sharp edge.
+        """
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError:
+                    pass
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def _include_frontend_origin(self):
+        """FRONTEND_URL is always an allowed origin.
+
+        Setting FRONTEND_URL and forgetting to add it to CORS_ORIGINS is an
+        easy mistake that shows up as an opaque "blocked by CORS" error in the
+        browser, so it is folded in here and duplicates are removed.
+        """
+        origins = [o.rstrip("/") for o in (self.CORS_ORIGINS or []) if o]
+        frontend = (self.FRONTEND_URL or "").rstrip("/")
+        if frontend and frontend not in origins:
+            origins.append(frontend)
+        # Assign through the validator so normalisation still applies.
+        object.__setattr__(self, "CORS_ORIGINS", list(dict.fromkeys(origins)))
+        return self
 
     class Config:
         env_file = ".env"

@@ -1,7 +1,6 @@
 import json
 import logging
-import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 import google.generativeai as genai
 from app.config import settings
 

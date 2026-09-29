@@ -177,7 +177,8 @@ class IMAPService:
                 prio_val = analysis.get("priority", PriorityEnum.MEDIUM)
 
                 email_item = EmailItem(
-                    id=email_unique_id,
+user_email=user_email,
+                         id=email_unique_id,
                     sender_name=sender_name,
                     sender_email=sender_email,
                     recipient_email=clean_email,

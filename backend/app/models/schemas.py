@@ -1,6 +1,5 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 from enum import Enum
 
 class PriorityEnum(str, Enum):
@@ -41,6 +40,10 @@ class EmailSummary(BaseModel):
 
 class EmailItem(BaseModel):
     id: str
+    # Owning account. Every read and write path is scoped by this field, so it
+    # must always be set by the route or the sync layer rather than trusted
+    # from a request body. Without it there is nothing to authorise against.
+    user_email: str = ""
     sender_name: str
     sender_email: str
     recipient_email: str = "user@example.com"
@@ -90,6 +93,9 @@ class ComposeEmailRequest(BaseModel):
     recipient: str
     subject: str
     body: str
+    # The message this replies to. Used to thread the reply and to set
+    # In-Reply-To. Validated against the caller's own mail by the route.
+    in_reply_to: Optional[str] = None
     category: Optional[CategoryEnum] = CategoryEnum.WORK
     priority: Optional[PriorityEnum] = PriorityEnum.MEDIUM
     attachments: Optional[List[Dict[str, Any]]] = None

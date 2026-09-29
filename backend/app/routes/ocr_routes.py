@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
-from typing import Optional
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from app.models.schemas import OCRScanResponse, OCRScanRequest
 from app.services.ocr_service import ocr_service
 from app.database.db import db
@@ -29,7 +28,7 @@ def scan_email_attachment(
         return ocr_service.analyze_document_content(req.raw_text, "document.pdf")
         
     if req.email_id and req.attachment_id:
-        email = db.get_email_by_id(req.email_id)
+        email = db.get_email_by_id(req.email_id, current_user.email)
         if not email:
             raise HTTPException(status_code=404, detail="Email not found")
         for att in email.attachments:

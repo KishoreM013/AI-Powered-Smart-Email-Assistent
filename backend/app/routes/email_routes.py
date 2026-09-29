@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import random
 from typing import List, Optional
@@ -85,10 +86,10 @@ def get_history(current_user: UserProfile = Depends(get_current_user)):
 @router.delete("/history/{email_id}")
 def delete_history_entry(email_id: str, current_user: UserProfile = Depends(get_current_user)):
     """Remove one analysed email permanently, not to the trash."""
-    owned = db.get_email_by_id(email_id)
+    owned = db.get_email_by_id(email_id, current_user.email)
     if not owned or owned.user_email != current_user.email:
         raise HTTPException(status_code=404, detail="Not found")
-    if not db.delete_email(email_id):
+    if not db.delete_email(email_id, current_user.email):
         raise HTTPException(status_code=404, detail="Not found")
     return {"status": "success"}
 
@@ -162,12 +163,12 @@ async def list_emails(
 @router.get("/{email_id}", response_model=EmailItem)
 def get_email(email_id: str, current_user: UserProfile = Depends(get_current_user)):
     """Fetch details of a specific email."""
-    email = db.get_email_by_id(email_id)
+    email = db.get_email_by_id(email_id, current_user.email)
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
     # Mark as read on open
     if not email.is_read:
-        db.update_email(email_id, {"is_read": True})
+        db.update_email(email_id, current_user.email, {"is_read": True})
         email.is_read = True
     return email
 
@@ -182,7 +183,18 @@ async def sync_emails(current_user: UserProfile = Depends(get_current_user)):
             user_email=current_user.email,
             app_password=creds["imap_pass"]
         )
-    return await gmail_service.sync_inbox(user_email=current_user.email, user_name=current_user.name)
+    gmail_creds = db.get_user_credentials(current_user.email)
+    if not gmail_creds:
+        # No stored credentials is not a successful sync of an empty mailbox.
+        # Say so, rather than reporting success for nothing.
+        return {
+            "status": "disconnected",
+            "message": "No mailbox is connected. Sign in with Google or add an IMAP password.",
+            "emails_synced": 0,
+        }
+    return await gmail_service.sync_inbox(
+        user_email=current_user.email, user_name=current_user.name
+    )
 
 @router.post("/sync-imap")
 async def sync_imap_emails(app_password: str, current_user: UserProfile = Depends(get_current_user)):
@@ -195,25 +207,25 @@ async def sync_imap_emails(app_password: str, current_user: UserProfile = Depend
 @router.post("/{email_id}/toggle-read", response_model=EmailItem)
 def toggle_read(email_id: str, current_user: UserProfile = Depends(get_current_user)):
     """Toggle read/unread status."""
-    email = db.get_email_by_id(email_id)
+    email = db.get_email_by_id(email_id, current_user.email)
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
-    updated = db.update_email(email_id, {"is_read": not email.is_read})
+    updated = db.update_email(email_id, current_user.email, {"is_read": not email.is_read})
     return updated
 
 @router.post("/{email_id}/toggle-star", response_model=EmailItem)
 def toggle_star(email_id: str, current_user: UserProfile = Depends(get_current_user)):
     """Toggle starred status."""
-    email = db.get_email_by_id(email_id)
+    email = db.get_email_by_id(email_id, current_user.email)
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
-    updated = db.update_email(email_id, {"is_starred": not email.is_starred})
+    updated = db.update_email(email_id, current_user.email, {"is_starred": not email.is_starred})
     return updated
 
 @router.delete("/{email_id}")
 def delete_email(email_id: str, current_user: UserProfile = Depends(get_current_user)):
     """Move email to trash or permanently remove if already in trash."""
-    success = db.delete_email(email_id)
+    success = db.delete_email(email_id, current_user.email)
     if not success:
         raise HTTPException(status_code=404, detail="Email not found")
     return {"status": "success", "message": "Email deleted successfully"}
@@ -221,12 +233,12 @@ def delete_email(email_id: str, current_user: UserProfile = Depends(get_current_
 @router.post("/{email_id}/action-items/{task_idx}/toggle", response_model=EmailItem)
 def toggle_action_item(email_id: str, task_idx: int, current_user: UserProfile = Depends(get_current_user)):
     """Mark an action item task as completed or pending."""
-    email = db.get_email_by_id(email_id)
+    email = db.get_email_by_id(email_id, current_user.email)
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
     if 0 <= task_idx < len(email.action_items):
         email.action_items[task_idx].completed = not email.action_items[task_idx].completed
-        db.update_email(email_id, {"action_items": [i.model_dump() for i in email.action_items]})
+        db.update_email(email_id, current_user.email, {"action_items": [i.model_dump() for i in email.action_items]})
     return email
 
 @router.post("/generate-reply", response_model=GenerateReplyResponse)
@@ -237,7 +249,7 @@ async def generate_reply(req: GenerateReplyRequest, current_user: UserProfile = 
     sender_name = "Sender"
     
     if req.email_id:
-        email = db.get_email_by_id(req.email_id)
+        email = db.get_email_by_id(req.email_id, current_user.email)
         if email:
             subject = subject or email.subject
             body = body or email.body
@@ -261,6 +273,20 @@ async def summarize_email_text(subject: str, body: str, sender: str = "Unknown",
 @router.post("/compose", response_model=EmailItem)
 async def compose_email(req: ComposeEmailRequest, current_user: UserProfile = Depends(get_current_user)):
     """Send / save composed outgoing email."""
+    # Validate before spending an AI call on a message that cannot be sent.
+    recipient = (req.recipient or "").strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient):
+        raise HTTPException(status_code=400, detail="A valid recipient is required.")
+    if not (req.subject or "").strip() or not (req.body or "").strip():
+        raise HTTPException(status_code=400, detail="Subject and body are required.")
+    if req.in_reply_to:
+        parent = db.get_email_by_id(req.in_reply_to, current_user.email)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Original message not found")
+
+    subject = (req.subject or "").strip()
+    body = (req.body or "").strip()
+
     now = time.time()
     new_id = f"em-sent-{random.randint(1000, 9999)}"
     
@@ -268,10 +294,11 @@ async def compose_email(req: ComposeEmailRequest, current_user: UserProfile = De
     analysis = await gemini_service.analyze_and_summarize_email(req.subject, req.body, current_user.name)
     
     email = EmailItem(
-        id=new_id,
+user_email=current_user.email,
+             id=new_id,
         sender_name=f"{current_user.name} (You)",
         sender_email=current_user.email,
-        recipient_email=req.recipient,
+        recipient_email=recipient,
         subject=req.subject,
         snippet=req.body[:120] + "...",
         body=req.body,
@@ -291,9 +318,29 @@ async def compose_email(req: ComposeEmailRequest, current_user: UserProfile = De
             key_deadlines=analysis.get("deadlines", [])
         ),
         action_items=[],
-        folder="sent"
+        folder="drafts"
     )
     db.add_email(email)
+
+    # Only claim "sent" if the message actually left. An undeliverable reply
+    # is filed as a draft and the reason is returned, so the UI can say so
+    # rather than reporting a phantom success.
+    delivery = await gmail_service.send_message(
+        user_email=current_user.email,
+        to=recipient,
+        subject=subject,
+        body=body,
+        in_reply_to=req.in_reply_to,
+    )
+    if delivery.get("delivered"):
+        email = db.update_email(
+            email.id, current_user.email, {"folder": "sent"}
+        ) or email
+    else:
+        email.snippet = f"[Not delivered: {delivery.get('reason')}] {email.snippet}"
+        email = db.update_email(
+            email.id, current_user.email, {"snippet": email.snippet}
+        ) or email
     
     # If sent to self or current user, also add an inbox copy for instant local receipt testing
     recip = (req.recipient or "").strip().lower()
@@ -321,7 +368,7 @@ async def phishing_check(
     reported rather than raised: a phishing verdict is an enhancement, and it
     must not be able to break the reading pane.
     """
-    email = db.get_email_by_id(email_id)
+    email = db.get_email_by_id(email_id, current_user.email)
     if not email or email.user_email != current_user.email:
         raise HTTPException(status_code=404, detail="Not found")
     try:
@@ -348,7 +395,7 @@ async def suggest_reply(
     ``tone`` is optional; the client sends the detected tone of the incoming
     message so a reply matches the register it received.
     """
-    email = db.get_email_by_id(email_id)
+    email = db.get_email_by_id(email_id, current_user.email)
     if not email or email.user_email != current_user.email:
         raise HTTPException(status_code=404, detail="Not found")
     from app.services.gemini import generate_smart_reply_ai
@@ -357,3 +404,40 @@ async def suggest_reply(
         tone=tone or "Professional", language=language,
     )
     return {"reply_body": body, "reply_text": body, "tone": tone, "language": language}
+
+
+@router.post("/{email_id}/restore", response_model=EmailItem)
+async def restore_email(email_id: str, current_user: UserProfile = Depends(get_current_user)):
+    """Return a trashed or spam message to the inbox."""
+    email = db.get_email_by_id(email_id, current_user.email)
+    if not email:
+        raise HTTPException(status_code=404, detail="Not found")
+    restored = db.update_email(
+        email_id, current_user.email,
+        {"folder": "inbox", "is_trash": False, "is_spam": False},
+    )
+    if not restored:
+        raise HTTPException(status_code=404, detail="Not found")
+    return restored
+
+
+@router.post("/{email_id}/move", response_model=EmailItem)
+async def move_email(
+    email_id: str,
+    folder: str = Query("inbox"),
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """Move a message between folders. Virtual folders are not destinations."""
+    target = (folder or "").strip().lower()
+    if target not in {"inbox", "sent", "drafts", "spam", "trash", "archive"}:
+        raise HTTPException(status_code=400, detail="Not a real folder")
+    email = db.get_email_by_id(email_id, current_user.email)
+    if not email:
+        raise HTTPException(status_code=404, detail="Not found")
+    moved = db.update_email(
+        email_id, current_user.email,
+        {"folder": target, "is_trash": target == "trash", "is_spam": target == "spam"},
+    )
+    if not moved:
+        raise HTTPException(status_code=404, detail="Not found")
+    return moved

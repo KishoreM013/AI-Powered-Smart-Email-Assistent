@@ -1,4 +1,3 @@
-import time
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt, JWTError
@@ -87,11 +86,16 @@ async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCrede
     payload = decode_access_token(token)
     if not payload:
         return None
+    # Optional auth still has to identify somebody. Falling back to a
+    # shared address would hand an anonymous caller a real identity.
+    subject, email = payload.get("sub"), payload.get("email")
+    if not subject or not email:
+        return None
     return UserProfile(
-        id=payload.get("sub", "usr-user-01"),
-        email=payload.get("email", "user@gmail.com"),
-        name=payload.get("name", "User"),
-        avatar=payload.get("avatar", "https://api.dicebear.com/7.x/bottts/svg?seed=User"),
+        id=subject,
+        email=email,
+        name=payload.get("name") or email.split("@")[0],
+        avatar=payload.get("avatar") or "",
         is_demo=payload.get("is_demo", False),
         connected_gmail=payload.get("connected_gmail", True)
     )

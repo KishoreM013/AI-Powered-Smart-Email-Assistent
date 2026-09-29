@@ -1,8 +1,8 @@
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from app.auth.auth_handler import create_access_token, create_token_for_user, get_current_user
-from app.models.schemas import Token, UserProfile, GoogleLoginRequest, AuthConfigResponse, IMAPLoginRequest
+from app.auth.auth_handler import create_token_for_user, get_current_user
+from app.models.schemas import Token, UserProfile, AuthConfigResponse, IMAPLoginRequest
 from app.services.gmail_service import gmail_service
 from app.services.imap_service import imap_service
 from app.config import settings
@@ -50,7 +50,7 @@ async def imap_login(req: IMAPLoginRequest):
 
     try:
         # Trigger real Gmail IMAP sync
-        res = await imap_service.fetch_real_emails_via_imap(
+        await imap_service.fetch_real_emails_via_imap(
             user_email=email_clean,
             app_password=req.app_password,
             max_emails=35

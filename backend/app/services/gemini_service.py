@@ -2,7 +2,7 @@ import os
 import json
 import re
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from app.models.schemas import EmailSummary, ActionItem, CategoryEnum, PriorityEnum
 from app.config import settings
 

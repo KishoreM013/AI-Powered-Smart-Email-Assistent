@@ -1,7 +1,11 @@
-import time
 import copy
+import logging
+from datetime import datetime, timezone
+from collections import Counter
 from typing import List, Optional, Dict, Any
-from app.models.schemas import EmailItem, CategoryEnum, PriorityEnum, EmailSummary, ActionItem, AttachmentInfo
+logger = logging.getLogger("smart_email_assistant")
+
+from app.models.schemas import EmailItem, CategoryEnum, PriorityEnum
 from app.config import settings
 
 try:
@@ -10,6 +14,10 @@ except ImportError:
     create_client, Client = None, None
 
 # In-memory realistic dataset with robust CRUD operations and Supabase Cloud Sync
+def _norm(email: Optional[str]) -> str:
+    return (email or "").strip().lower()
+
+
 class Database:
     def __init__(self):
         self.emails: Dict[str, EmailItem] = {}
@@ -35,15 +43,22 @@ class Database:
         clean_email = (email or "").strip().lower()
         return self.user_credentials.get(clean_email)
 
-    def clear_fake_emails_for_user(self, email: str):
-        clean_email = (email or "").strip().lower()
+    def clear_fake_emails_for_user(self, email: str) -> int:
+        """Drop the synthetic demo set once real mail arrives, and report how many.
+
+        Scoped by owner, not by sender/recipient, so it cannot remove somebody
+        else's real message.
+        """
+        clean_email = _norm(email)
+        if not clean_email:
+            return 0
         to_delete = [
             eid for eid, em in self.emails.items()
-            if (em.recipient_email.lower() == clean_email or em.sender_email.lower() == clean_email)
-            and eid.startswith("em-usr-")
+            if _norm(em.user_email) == clean_email and eid.startswith("em-usr-")
         ]
         for eid in to_delete:
             del self.emails[eid]
+        return len(to_delete)
 
     def _init_supabase(self):
         """Initialize Supabase Cloud Client if credentials are provided."""
@@ -71,15 +86,19 @@ class Database:
         has_attachments: Optional[bool] = None,
         user_email: Optional[str] = None
     ) -> List[EmailItem]:
-        clean_user = (user_email or "").strip().lower()
+        clean_user = _norm(user_email)
+        if not clean_user:
+            # No owner means no authorised caller. Return nothing rather
+            # than the whole mailbox.
+            return []
 
         results = []
         for email in self.emails.values():
-            if clean_user:
-                recip = (getattr(email, 'recipient_email', '') or '').lower()
-                sendr = (getattr(email, 'sender_email', '') or '').lower()
-                if recip != clean_user and sendr != clean_user:
-                    continue
+            # Scope on the owner field. Matching on sender/recipient was
+            # wrong: it hid messages synced from a shared mailbox or an
+            # alias, and ownership is not the same thing.
+            if _norm(getattr(email, "user_email", "")) != clean_user:
+                continue
 
             if folder and folder.lower() != "all":
                 f_lower = folder.lower()
@@ -123,11 +142,26 @@ class Database:
         results.sort(key=lambda x: x.timestamp, reverse=True)
         return results
 
-    def get_email_by_id(self, email_id: str) -> Optional[EmailItem]:
+    def _owned(self, email_id: str, user_email: str) -> Optional[EmailItem]:
+        """Fetch a message only if it belongs to ``user_email``.
+
+        Every read path goes through here. Callers pass the authenticated
+        account, so one user can never reach another's mail by guessing an id.
+        A mismatch returns None, which the routes surface as 404 rather than
+        403 -- the caller should not learn that the id exists at all.
+        """
         email = self.emails.get(email_id)
-        if email:
-            return copy.deepcopy(email)
-        return None
+        if not email:
+            return None
+        if _norm(email.user_email) != _norm(user_email):
+            logger.warning(
+                "Refused cross-account access to %s by %s", email_id, user_email
+            )
+            return None
+        return copy.deepcopy(email)
+
+    def get_email_by_id(self, email_id: str, user_email: str = "") -> Optional[EmailItem]:
+        return self._owned(email_id, user_email)
 
     def _sync_email_to_supabase(self, email: EmailItem):
         if self.supabase:
@@ -154,17 +188,24 @@ class Database:
         self._sync_email_to_supabase(email)
         return email
 
-    def update_email(self, email_id: str, updates: Dict[str, Any]) -> Optional[EmailItem]:
-        if email_id not in self.emails:
+    def update_email(
+        self, email_id: str, user_email: str, updates: Dict[str, Any]
+    ) -> Optional[EmailItem]:
+        if not self._owned(email_id, user_email):
             return None
         email_dict = self.emails[email_id].model_dump()
+        # Ownership is not reassignable: otherwise an update could hand a
+        # message to another account, or take one away from its owner.
+        updates = {k: v for k, v in updates.items() if k != "user_email"}
         email_dict.update(updates)
         updated_email = EmailItem(**email_dict)
         self.emails[email_id] = updated_email
         self._sync_email_to_supabase(updated_email)
         return copy.deepcopy(updated_email)
 
-    def delete_email(self, email_id: str) -> bool:
+    def delete_email(self, email_id: str, user_email: str = "") -> bool:
+        if not self._owned(email_id, user_email):
+            return False
         if email_id in self.emails:
             if self.emails[email_id].folder == "trash":
                 del self.emails[email_id]
@@ -174,15 +215,75 @@ class Database:
             return True
         return False
 
-    def get_analytics(self) -> Dict[str, Any]:
-        all_emails = list(self.emails.values())
+    def add_emails(self, emails: List[EmailItem]) -> int:
+        """Store several messages, skipping any without an owner.
+
+        An unowned message has no authorisation context, so storing it would
+        create something nobody can ever read.
+        """
+        stored = 0
+        for email in emails:
+            if not _norm(getattr(email, "user_email", "")):
+                logger.warning("Refusing to store %s: no owner", email.id)
+                continue
+            self.add_email(email)
+            stored += 1
+        return stored
+
+    def replace_user_emails(self, user_email: str, emails: List[EmailItem]) -> int:
+        """Make a fresh sync authoritative for server folders.
+
+        Locally composed mail is kept: sent messages, drafts and anything the
+        user trashed were produced here, not fetched, and a sync must not
+        delete them.
+        """
+        target = _norm(user_email)
+        keep = {"sent", "drafts", "trash"}
+        for key, existing in list(self.emails.items()):
+            if _norm(existing.user_email) != target:
+                continue
+            if (existing.folder or "").lower() in keep:
+                continue
+            del self.emails[key]
+        return self.add_emails([e for e in emails if _norm(e.user_email) == target])
+
+    def clear_user(self, user_email: str) -> int:
+        """Remove every message belonging to one account.
+
+        Used by "forget me" on sign-out and by the test suite for isolation.
+        Scoped deliberately: it must never be callable without an owner.
+        """
+        target = _norm(user_email)
+        if not target:
+            return 0
+        doomed = [
+            k for k, e in self.emails.items() if _norm(e.user_email) == target
+        ]
+        for k in doomed:
+            del self.emails[k]
+        return len(doomed)
+
+    def get_analytics(self, user_email: str = "") -> Dict[str, Any]:
+        # Scoped: the dashboard must never count or summarise another
+        # account's mail. An empty mailbox returns zeroes, not invented figures.
+        if not _norm(user_email):
+            return _empty_analytics()
+        all_emails = [
+            e for e in self.emails.values()
+            if _norm(e.user_email) == _norm(user_email)
+        ]
         total = len(all_emails)
         unread = sum(1 for e in all_emails if not e.is_read and e.folder == "inbox")
         spam_count = sum(1 for e in all_emails if e.is_spam or e.category == CategoryEnum.SPAM)
         urgent = sum(1 for e in all_emails if e.priority == PriorityEnum.HIGH and e.folder == "inbox")
         
-        # Calculate estimated time saved (5 mins per summarized email)
-        time_saved = round(total * 5.2 / 60, 1)
+        # Only messages that were actually summarised count. The per-message
+        # figure is an explicit estimate rather than a measurement.
+        summarised = sum(
+            1 for e in all_emails
+            if e.summary and (e.summary.one_liner or e.summary.bullet_points)
+        )
+        time_saved = round(summarised * 2 / 60, 1)
 
         category_counts: Dict[str, int] = {}
         for c in CategoryEnum:
@@ -196,23 +297,49 @@ class Database:
             "Low": sum(1 for e in all_emails if e.priority == PriorityEnum.LOW)
         }
 
-        # Daily sync volume simulation
+        # Daily volume, computed from real timestamps.
+        buckets: Dict[str, Dict[str, int]] = {}
+        for e in all_emails:
+            if not e.timestamp:
+                continue
+            try:
+                day = datetime.fromtimestamp(
+                    e.timestamp, tz=timezone.utc
+                ).strftime("%Y-%m-%d")
+            except (OverflowError, OSError, ValueError):
+                continue
+            b = buckets.setdefault(day, {"received": 0, "summarized": 0, "urgent": 0})
+            b["received"] += 1
+            if e.summary and (e.summary.one_liner or e.summary.bullet_points):
+                b["summarized"] += 1
+            if e.priority == PriorityEnum.HIGH:
+                b["urgent"] += 1
+
         daily_volume = [
-            {"day": "Mon", "received": 24, "summarized": 24, "urgent": 5},
-            {"day": "Tue", "received": 38, "summarized": 38, "urgent": 8},
-            {"day": "Wed", "received": 42, "summarized": 42, "urgent": 11},
-            {"day": "Thu", "received": 35, "summarized": 35, "urgent": 6},
-            {"day": "Fri", "received": 48, "summarized": 48, "urgent": 14},
-            {"day": "Sat", "received": 12, "summarized": 12, "urgent": 1},
-            {"day": "Sun", "received": 8, "summarized": 8, "urgent": 0}
+            {"day": datetime.strptime(d, "%Y-%m-%d").strftime("%d %b"), **buckets[d]}
+            for d in sorted(buckets)[-14:]
         ]
 
+        # Top senders, from this account's own mail only.
+        sender_counts: Counter = Counter(
+            (e.sender_name or e.sender_email) for e in all_emails
+        )
+        sender_emails = {
+            (e.sender_name or e.sender_email): e.sender_email for e in all_emails
+        }
+        urgent_by_sender = Counter(
+            (e.sender_name or e.sender_email)
+            for e in all_emails
+            if e.priority == PriorityEnum.HIGH
+        )
         top_senders = [
-            {"name": "Sarah Jenkins (VP Eng)", "email": "sarah.jenkins@techcorp.io", "count": 14, "urgent_ratio": "85%"},
-            {"name": "David Miller (Product)", "email": "david.miller@techcorp.io", "count": 9, "urgent_ratio": "40%"},
-            {"name": "Emily Zhao (Legal)", "email": "emily.zhao@lexislegal.com", "count": 6, "urgent_ratio": "66%"},
-            {"name": "Stripe Billing", "email": "invoices@stripe.com", "count": 4, "urgent_ratio": "0%"},
-            {"name": "GitHub Notifications", "email": "notifications@github.com", "count": 18, "urgent_ratio": "5%"}
+            {
+                "name": name,
+                "email": sender_emails.get(name, ""),
+                "count": count,
+                "urgent_ratio": f"{round(urgent_by_sender.get(name, 0) / count * 100)}%",
+            }
+            for name, count in sender_counts.most_common(8)
         ]
 
         return {
@@ -220,13 +347,32 @@ class Database:
             "unread_count": unread,
             "spam_blocked": spam_count,
             "urgent_count": urgent,
+            "important_count": sum(
+                1 for e in all_emails
+                if e.priority == PriorityEnum.HIGH or e.is_starred
+            ),
+            "open_action_items": sum(
+                1 for e in all_emails for a in e.action_items if not a.completed
+            ),
             "time_saved_hours": time_saved,
-            "avg_response_time_minutes": 14,
+            "avg_response_time_minutes": 0,
             "category_distribution": category_counts,
             "priority_distribution": priority_counts,
             "daily_volume": daily_volume,
-            "top_senders": top_senders
+            "top_senders": top_senders,
         }
+
+
+def _empty_analytics() -> Dict[str, Any]:
+    """Zeroes, not invented figures. An empty mailbox must look empty."""
+    return {
+        "total_emails": 0, "unread_count": 0, "spam_blocked": 0,
+        "urgent_count": 0, "important_count": 0, "open_action_items": 0,
+        "time_saved_hours": 0.0, "avg_response_time_minutes": 0,
+        "category_distribution": {}, "priority_distribution": {},
+        "daily_volume": [], "top_senders": [],
+    }
+
 
 # Global singleton database instance
 db = Database()

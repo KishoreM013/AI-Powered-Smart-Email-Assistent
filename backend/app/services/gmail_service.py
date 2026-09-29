@@ -1,3 +1,4 @@
+import base64
 import time
 import random
 from typing import List, Dict, Any, Optional
@@ -42,6 +43,91 @@ class GmailService:
             f"prompt=consent"
         )
 
+    def _persist_refreshed(self, user_email: str, creds) -> None:
+        """Write a refreshed token back to the store.
+
+        Without this, Google rotates the access token on refresh and the old
+        one is kept, so the account eventually looks disconnected even though
+        the refresh token is still perfectly good.
+        """
+        try:
+            stored = dict(db.get_user_credentials(user_email) or {})
+            stored["access_token"] = creds.token
+            if creds.refresh_token:
+                stored["refresh_token"] = creds.refresh_token
+            stored["expiry"] = creds.expiry.isoformat() if creds.expiry else None
+            db.set_user_credentials(user_email, stored)
+        except Exception as exc:
+            print(f"[gmail] could not persist refreshed token: {exc}")
+
+    def _credentials_for(self, user_email: str):
+        """Build authorised Gmail credentials for an account, or None.
+
+        Returns None rather than raising when nothing is connected, so the
+        caller can file the message as a draft instead of pretending.
+        """
+        try:
+            from google.oauth2.credentials import Credentials
+        except Exception:
+            return None
+        stored = db.get_user_credentials(user_email) or {}
+        token = stored.get("token") or stored.get("access_token")
+        if not token:
+            return None
+        try:
+            creds = Credentials(
+                token=token,
+                refresh_token=stored.get("refresh_token"),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=self.client_id or None,
+                client_secret=self.client_secret or None,
+                scopes=["https://www.googleapis.com/auth/gmail.send",
+                        "https://www.googleapis.com/auth/gmail.modify"],
+            )
+        except Exception:
+            return None
+
+        if not creds.valid:
+            if not creds.refresh_token:
+                return None
+            try:
+                creds.refresh(google.auth.transport.requests.Request())
+            except Exception as exc:
+                print(f"[gmail] token refresh failed for {user_email}: {exc}")
+                return None
+            self._persist_refreshed(user_email, creds)
+        return creds
+
+    async def send_message(self, user_email: str, to: str, subject: str, body: str,
+                           in_reply_to: Optional[str] = None) -> Dict[str, Any]:
+        """Attempt delivery through the Gmail API.
+
+        Never raises. The result always says whether the message actually went
+        out, because filing an unsent message as "sent" is worse than filing it
+        as a draft.
+        """
+        creds = self._credentials_for(user_email)
+        if creds is None:
+            return {"delivered": False, "reason": "No connected mailbox."}
+        try:
+            from googleapiclient.discovery import build
+            from email.message import EmailMessage
+
+            service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+            msg = EmailMessage()
+            msg["To"] = to
+            msg["Subject"] = subject
+            msg.set_content(body)
+            if in_reply_to:
+                msg["In-Reply-To"] = in_reply_to
+                msg["References"] = in_reply_to
+            service.users().messages().send(
+                userId="me", body={"raw": _b64(msg.as_bytes())}
+            ).execute()
+            return {"delivered": True, "reason": None}
+        except Exception as exc:
+            return {"delivered": False, "reason": f"{type(exc).__name__}: {exc}"}
+
     async def sync_inbox(self, user_email: str = "user@gmail.com", user_name: str = "", credentials_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Runs real-time email sync engine for the logged-in user."""
         clean_user = (user_email or "user@gmail.com").strip().lower()
@@ -76,7 +162,8 @@ class GmailService:
                                 ts = time.time()
 
                             email = EmailItem(
-                                id=email_id,
+user_email=user_email,
+                                     id=email_id,
                                 sender_name=raw["sender_name"],
                                 sender_email=raw["sender_email"],
                                 recipient_email=clean_user,
@@ -549,3 +636,8 @@ Account Protection Center""",
         return emails
 
 gmail_service = GmailService()
+
+
+def _b64(raw: bytes) -> str:
+    """URL-safe base64, as the Gmail API requires."""
+    return base64.urlsafe_b64encode(raw).decode()
