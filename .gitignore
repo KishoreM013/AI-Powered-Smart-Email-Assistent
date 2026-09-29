@@ -27,3 +27,6 @@ backend/data/
 *.db
 *.db-wal
 *.db-shm
+
+# local scratch files
+.probe*
