@@ -1,3 +1,4 @@
+import logging
 import time
 import random
 from typing import List, Optional
@@ -11,7 +12,105 @@ from app.services.gemini_service import gemini_service
 from app.services.gmail_service import gmail_service
 from app.auth.auth_handler import get_current_user, UserProfile
 
+logger = logging.getLogger("smart_email_assistant")
+
 router = APIRouter(prefix="/api/emails", tags=["Emails"])
+
+# ================================================================ analyse any
+# Registered above the /{email_id} routes: static paths must be matched before
+# the parameterised ones or FastAPI will treat "analyze" as an email id.
+@router.post("/analyze", response_model=EmailItem)
+async def analyze_pasted_email(
+    payload: dict,
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """Analyse an email the user pasted, then optionally store it.
+
+    The message does not have to come from a connected mailbox, which is the
+    point: forwarded threads and text copied out of a screenshot both work.
+    """
+    body = str(payload.get("body") or "").strip()
+    subject = str(payload.get("subject") or "").strip()
+    if not body and not subject:
+        raise HTTPException(status_code=400, detail="Provide the email body or subject.")
+
+    sender_email = str(payload.get("sender_email") or "").strip()
+    sender_name = str(payload.get("sender_name") or "").strip() or (
+        sender_email.split("@")[0] if sender_email else "Unknown sender"
+    )
+
+    from app.services.gemini import analyze_email_ai
+    analysis = await analyze_email_ai(subject=subject, body=body, sender=sender_name)
+
+    item = EmailItem(
+        id=f"em-pasted-{int(time.time() * 1000)}",
+        user_email=current_user.email,
+        sender_name=sender_name,
+        sender_email=sender_email,
+        recipient_email=current_user.email,
+        subject=subject or "(no subject)",
+        snippet=body[:160],
+        body=body,
+        category=analysis.get("category", "Work"),
+        priority=analysis.get("priority", "Medium"),
+        date=time.strftime("%d %b, %H:%M"),
+        timestamp=time.time(),
+        is_read=False,
+        is_starred=analysis.get("priority") == "High",
+        summary=EmailSummary(
+            one_liner=analysis.get("one_liner", subject),
+            bullet_points=analysis.get("bullet_points", []),
+            sentiment=analysis.get("sentiment", "Neutral"),
+            key_deadlines=analysis.get("deadlines", []),
+        ),
+        action_items=[
+            ActionItem(task=a.get("task", ""), due_date=a.get("due_date"))
+            for a in analysis.get("action_items", []) if a.get("task")
+        ],
+        folder="inbox",
+    )
+    if payload.get("save", True):
+        db.add_email(item)
+    return item
+
+
+# =================================================================== history
+@router.get("/history", response_model=List[EmailItem])
+def get_history(current_user: UserProfile = Depends(get_current_user)):
+    """Everything this account has analysed, newest first."""
+    items = db.get_emails(folder="all", user_email=current_user.email)
+    return sorted(items, key=lambda e: e.timestamp or 0, reverse=True)
+
+
+@router.delete("/history/{email_id}")
+def delete_history_entry(email_id: str, current_user: UserProfile = Depends(get_current_user)):
+    """Remove one analysed email permanently, not to the trash."""
+    owned = db.get_email_by_id(email_id)
+    if not owned or owned.user_email != current_user.email:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not db.delete_email(email_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"status": "success"}
+
+
+# =============================================================== style profile
+@router.get("/style-profile")
+def get_style_profile(current_user: UserProfile = Depends(get_current_user)):
+    """What the app has learned about how this account writes.
+
+    Returns an honest empty profile when there is nothing to learn from yet,
+    rather than inventing a style.
+    """
+    try:
+        from app.services.style_learner import StyleLearner
+        from app.database.storage import get_storage
+        return StyleLearner(get_storage(), current_user.email).build_profile().model_dump()
+    except Exception as exc:
+        logger.info("Style profile unavailable: %s", exc)
+        return {"reply_count": 0, "ready": False, "common_phrases": [],
+                "average_words": 0.0, "formality": 0.0, "language": "en",
+                "uses_emoji": False, "uses_bullets": False,
+                "average_sentence_length": 0.0, "greeting": None, "sign_off": None}
 
 @router.get("/counts")
 async def get_email_counts(current_user: UserProfile = Depends(get_current_user)):
@@ -209,3 +308,52 @@ async def compose_email(req: ComposeEmailRequest, current_user: UserProfile = De
 
     return email
 
+# ----------------------------------------------------------- phishing check
+@router.get("/{email_id}/phishing-check")
+async def phishing_check(
+    email_id: str,
+    language: str = "en",
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """Assess one message for phishing.
+
+    The UI calls this for every message it opens, so a failure here is
+    reported rather than raised: a phishing verdict is an enhancement, and it
+    must not be able to break the reading pane.
+    """
+    email = db.get_email_by_id(email_id)
+    if not email or email.user_email != current_user.email:
+        raise HTTPException(status_code=404, detail="Not found")
+    try:
+        from app.services.gemini import analyze_phishing_ai
+        return await analyze_phishing_ai(
+            subject=email.subject, body=email.body,
+            sender=email.sender_email, language=language,
+        )
+    except Exception as exc:
+        logger.warning("Phishing check failed for %s: %s", email_id, exc)
+        return {"status": "Unknown", "reason": "Could not assess this message."}
+
+
+# --------------------------------------------------------- smart reply draft
+@router.get("/{email_id}/suggest-reply")
+async def suggest_reply(
+    email_id: str,
+    tone: str = "Professional",
+    language: str = "en",
+    current_user: UserProfile = Depends(get_current_user),
+):
+    """Draft a reply for an existing thread.
+
+    ``tone`` is optional; the client sends the detected tone of the incoming
+    message so a reply matches the register it received.
+    """
+    email = db.get_email_by_id(email_id)
+    if not email or email.user_email != current_user.email:
+        raise HTTPException(status_code=404, detail="Not found")
+    from app.services.gemini import generate_smart_reply_ai
+    body = await generate_smart_reply_ai(
+        subject=email.subject, body=email.body, sender=email.sender_name,
+        tone=tone or "Professional", language=language,
+    )
+    return {"reply_body": body, "reply_text": body, "tone": tone, "language": language}

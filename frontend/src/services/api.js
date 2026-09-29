@@ -173,6 +173,37 @@ export const emailsAPI = {
     }
   },
 
+  /** Analyse an arbitrary email the user pasted, not one from a mailbox. */
+  analyze: (payload) => api.post('/api/emails/analyze', payload).then(unwrap),
+
+  /** Every email this account has analysed, newest first. */
+  getHistory: () => api.get('/api/emails/history').then(unwrap),
+
+  /** Remove an analysed email from history, permanently. */
+  deleteHistoryEntry: (id) =>
+    api.delete(`/api/emails/history/${encodeURIComponent(id)}`).then(unwrap),
+
+  /** What the app has learned about how this account writes. */
+  getStyleProfile: () => api.get('/api/emails/style-profile').then(unwrap),
+
+  /** Phishing verdict for one message. The reading pane calls this on open. */
+  phishingCheck: (emailId, language = 'en') =>
+    api
+      .get(`/api/emails/${encodeURIComponent(emailId)}/phishing-check`, { params: { language } })
+      .then(unwrap),
+
+  /**
+   * Draft a reply for an existing thread.
+   * `tone` is optional: the server falls back to the detected tone.
+   */
+  suggestReply: (emailId, tone, language = 'en') => {
+    const params = { language };
+    if (tone) params.tone = tone;
+    return api
+      .get(`/api/emails/${encodeURIComponent(emailId)}/suggest-reply`, { params })
+      .then(unwrap);
+  },
+
   toggleActionItem: async (emailId, taskIdx) => {
     try {
       const res = await api.post(`/api/emails/${emailId}/action-items/${taskIdx}/toggle`);
