@@ -230,7 +230,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#F8FAFC] dark:bg-[#090D16] text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden font-sans transition-colors duration-200 select-none">
+    <div className="h-screen w-screen canvas text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden font-sans">
       
       {/* Top Navbar */}
       <Navbar
@@ -276,7 +276,7 @@ export default function App() {
         {activeView === 'inbox' && (
           <div className="flex-1 flex overflow-hidden">
             {/* Center Email List Feed */}
-            <div className="w-full md:w-5/12 lg:w-5/12 flex-shrink-0 flex flex-col h-full border-r border-slate-200 dark:border-slate-800/80">
+            <div className="w-full md:w-[42%] lg:w-[38%] xl:w-[34%] flex-shrink-0 flex flex-col h-full border-r line">
               <EmailList
                 activeFolder={activeFolder}
                 emails={emails}
