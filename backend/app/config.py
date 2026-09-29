@@ -53,14 +53,23 @@ class Settings(BaseSettings):
     
     # Frontend URL for CORS & redirects
     FRONTEND_URL: str = "http://localhost:5173"
+    # Exact origins. In the environment, as a JSON list:
+    #   CORS_ORIGINS=["https://my-app.vercel.app","http://localhost:5173"]
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
-        "http://localhost:8000",
-        "https://*.vercel.app",
-        "https://*.onrender.com"
     ]
+
+    # Starlette matches allow_origins by exact string, so a value like
+    # "https://*.vercel.app" matches nothing and silently allows nobody.
+    # Deployment hostnames are not known in advance, so these two platforms
+    # are matched by regex instead (applied in main.py).
+    CORS_ORIGIN_REGEX: Optional[str] = (
+        r"^https://[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$"
+        r"|^https://[a-z0-9-]+(?:\.[a-z0-9-]+)*\.onrender\.com$"
+        r"|^https://[a-z0-9-]+(?:\.[a-z0-9-]+)*\.railway\.app$"
+    )
 
     class Config:
         env_file = ".env"

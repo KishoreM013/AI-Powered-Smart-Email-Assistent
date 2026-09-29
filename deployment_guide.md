@@ -59,7 +59,7 @@ Initialize a Git repository in the project root directory and push it to GitHub:
 | `GOOGLE_REDIRECT_URI` | `https://YOUR_BACKEND_URL.onrender.com/api/auth/callback` | Render URL + callback path. |
 | `GEMINI_API_KEY` | *[Your Google Gemini API key]* | Used for generative AI summaries and replies. |
 | `SUPABASE_URL` | `https://ocjtrlioqnbpccjjcizr.supabase.co/rest/v1/` | Copy from local `.env` |
-| `SUPABASE_KEY` | `sb_secret_9w4WOaAtX4c3cDk12D99dg_-dGbr94g` | Copy from local `.env` |
+| `SUPABASE_KEY` | `<YOUR_SUPABASE_KEY>` | Copy from local `.env` |
 | `DEMO_MODE` | `False` | Run with live email integrations. |
 | `FRONTEND_URL` | `https://YOUR_FRONTEND_URL.vercel.app` | Vercel frontend app URL. |
 
