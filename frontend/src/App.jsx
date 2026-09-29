@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
-import FilterBar from './components/FilterBar';
 import EmailList from './components/EmailList';
 import EmailDetail from './components/EmailDetail';
 import AIAssistantPanel from './components/AIAssistantPanel';
@@ -9,8 +8,6 @@ import VoiceCommandModal from './components/VoiceCommandModal';
 import PhishingDetectionModal from './components/PhishingDetectionModal';
 import AISummaryModal from './components/AISummaryModal';
 import OCRScanner from './components/OCRScanner';
-import AnalyzeView from './components/AnalyzeView';
-import HistoryView from './components/HistoryView';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ComposeModal from './components/ComposeModal';
 import SettingsModal from './components/SettingsModal';
@@ -18,16 +15,18 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { emailsAPI, authAPI } from './services/api';
 
+const DEFAULT_USER = {
+  id: "usr-user-01",
+  email: "user@gmail.com",
+  name: "User Account",
+  avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=UserAccount",
+  connected_gmail: true
+};
+
 export default function App() {
-  // No default account. If there is no stored session the user is signed out
-  // and must sign in; the workspace is never shown to an anonymous visitor.
   const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('smart_email_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+    const saved = localStorage.getItem('smart_email_user');
+    return saved ? JSON.parse(saved) : DEFAULT_USER;
   });
 
   const [showLandingPage, setShowLandingPage] = useState(false);
@@ -64,13 +63,6 @@ export default function App() {
   const [activeFolder, setActiveFolder] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState({
-    priority: null,
-    tone: null,
-    from_date: null,
-    to_date: null,
-    requires_reply: false,
-  });
 
   // Email Data
   const [emails, setEmails] = useState([]);
@@ -110,11 +102,6 @@ export default function App() {
         folder: targetFolder,
         category: selectedCategory,
         search: searchQuery || undefined,
-        priority: filters.priority,
-        tone: filters.tone,
-        from_date: filters.from_date,
-        to_date: filters.to_date,
-        requires_reply: filters.requires_reply ? true : undefined,
       });
       setEmails(data || []);
       if (data && data.length > 0) {
@@ -134,7 +121,7 @@ export default function App() {
     if (activeView === 'inbox') {
       loadEmails();
     }
-  }, [user, activeFolder, selectedCategory, searchQuery, activeView, filters]);
+  }, [user, activeFolder, selectedCategory, searchQuery, activeView]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -180,25 +167,16 @@ export default function App() {
     showToast(`Welcome back, ${userObj.name || 'User'}! Inbox synchronized.`);
   };
 
-  /**
-   * Sign out.
-   *
-   * The interface updates immediately rather than after the server call, so
-   * the button never feels stuck. authAPI.logout clears the local token in a
-   * finally block, so the user ends up signed out locally either way.
-   */
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    authAPI.logout();
+    localStorage.removeItem('smart_email_user');
+    localStorage.removeItem('smart_email_token');
     setUser(null);
     setEmails([]);
     setSelectedEmail(null);
     setShowLandingPage(true);
     setShowLoginModal(true);
     showToast("Signed out successfully.");
-    try {
-      await authAPI.logout();
-    } catch {
-      // Nothing to do: the session is already gone from this browser.
-    }
   };
 
   // Handle Voice Commands:
@@ -237,10 +215,7 @@ export default function App() {
     trash: serverCounts?.trash ?? emails.filter(e => e.folder === 'trash' || e.is_trash).length,
   };
 
-  // Sign-in gate. Without a session the visitor gets the landing page, or the
-  // sign-in screen if they asked for it. The mail workspace below is only
-  // reachable once an account is actually authenticated.
-  if (!user) {
+  if (showLandingPage && !user) {
     if (showLoginModal) {
       return <LoginPage onLoginSuccess={handleLoginSuccess} />;
     }
@@ -255,7 +230,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen canvas text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden font-sans">
+    <div className="h-screen w-screen bg-[#F8FAFC] dark:bg-[#090D16] text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden font-sans transition-colors duration-200 select-none">
       
       {/* Top Navbar */}
       <Navbar
@@ -286,10 +261,7 @@ export default function App() {
           activeFolder={activeFolder}
           setActiveFolder={setActiveFolder}
           selectedCategory={selectedCategory}
-          setSelectedCategory={(v) => {
-            setSelectedCategory(v);
-            setFilters((f) => ({ ...f, category: v }));
-          }}
+          setSelectedCategory={setSelectedCategory}
           unreadCount={emails.filter(e => !e.is_read).length}
           urgentCount={emails.filter(e => e.priority === 'High').length}
           folderCounts={folderCounts}
@@ -304,12 +276,7 @@ export default function App() {
         {activeView === 'inbox' && (
           <div className="flex-1 flex overflow-hidden">
             {/* Center Email List Feed */}
-            <div className="w-full md:w-[42%] lg:w-[38%] xl:w-[34%] flex-shrink-0 flex flex-col h-full border-r line">
-              <FilterBar
-                filters={{ ...filters, category: selectedCategory }}
-                onChange={setFilters}
-                resultCount={emails.length}
-              />
+            <div className="w-full md:w-5/12 lg:w-5/12 flex-shrink-0 flex flex-col h-full border-r border-slate-200 dark:border-slate-800/80">
               <EmailList
                 activeFolder={activeFolder}
                 emails={emails}
@@ -348,22 +315,6 @@ export default function App() {
               />
             </div>
           </div>
-        )}
-
-        {activeView === 'analyze' && (
-          <AnalyzeView
-            language={language}
-            onOpenEmail={setSelectedEmail}
-            onHistoryChanged={loadEmails}
-          />
-        )}
-
-        {activeView === 'history' && (
-          <HistoryView
-            language={language}
-            onOpenEmail={setSelectedEmail}
-            onChanged={loadEmails}
-          />
         )}
 
         {activeView === 'ocr' && (

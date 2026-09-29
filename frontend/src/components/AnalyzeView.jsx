@@ -13,47 +13,6 @@ import { TONES, badgeClass, PRIORITY_CLASSES, CATEGORY_CLASSES, TONE_CLASSES } f
  * Every failure path surfaces the real error from the API. Nothing here
  * invents a result, and nothing is shown that the backend did not return.
  */
-/**
- * Flatten the API response into what this view renders.
- *
- * The endpoint returns an EmailItem, so the analysis lives under `summary` and
- * the spam verdict under `phishing`. This view reads them flat, so without
- * this the badges, the one-liner, the tone, the meeting block and the keywords
- * all silently rendered as undefined -- the headline screen of the app showed
- * almost nothing while reporting success.
- */
-function toResult(data, saved) {
-  if (!data) return null;
-  const s = data.summary || {};
-  const phishing = data.phishing || null;
-  return {
-    ...s,
-    id: data.id,
-    category: data.category,
-    priority: data.priority,
-    sender_name: data.sender_name,
-    subject: data.subject || s.one_liner || '',
-    one_liner: s.one_liner || data.subject || '',
-    bullet_points: Array.isArray(s.bullet_points) ? s.bullet_points : [],
-    key_deadlines: Array.isArray(s.key_deadlines) ? s.key_deadlines : [],
-    dates: Array.isArray(s.dates) ? s.dates : [],
-    people: Array.isArray(s.people) ? s.people : [],
-    keywords: Array.isArray(s.keywords) ? s.keywords : [],
-    meeting: s.meeting || null,
-    tone: s.tone || 'Neutral',
-    sentiment: s.sentiment || 'Neutral',
-    importance_score: Number(s.importance_score) || 0,
-    requires_reply: Boolean(s.requires_reply),
-    action_items: Array.isArray(data.action_items) ? data.action_items : [],
-    reply_draft: data.reply_draft || null,
-    is_phishing: Boolean(data.is_spam) || phishing?.status === 'Phishing',
-    phishing,
-    // Surfaced in the UI so a degraded run is not mistaken for a good one.
-    engine: data.engine || (phishing ? 'gemini' : 'local_rules'),
-    saved: Boolean(saved),
-  };
-}
-
 export default function AnalyzeView({ onOpenEmail, onHistoryChanged, language = 'en' }) {
   const ta = language === 'ta';
   const [subject, setSubject] = useState('');
@@ -120,8 +79,11 @@ export default function AnalyzeView({ onOpenEmail, onHistoryChanged, language = 
         if (tone) payload.tone = tone;
       }
       const data = await emailsAPI.analyze(payload);
-      setResult(toResult(data, payload.save));
-      if (payload.save && data?.id) onHistoryChanged?.();
+      setResult(data);
+      if (data.saved) {
+        onHistoryChanged?.();
+        if (data.email) onOpenEmail?.(data.email);
+      }
       if (personalize) loadStyle();
     } catch (err) {
       setError(err?.message || (ta ? 'ஆய்வு தோல்வியடைந்தது.' : 'Analysis failed. Please try again.'));
