@@ -2,7 +2,6 @@ from app.services.model_registry import build_model
 import logging
 from io import BytesIO
 from pypdf import PdfReader
-import google.generativeai as genai
 from app.config import settings
 
 logger = logging.getLogger("smart_email_assistant")

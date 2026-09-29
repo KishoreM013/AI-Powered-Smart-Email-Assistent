@@ -6,7 +6,6 @@ import random
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.models.schemas import (
-    StyleProfile,
     Person,
     MeetingDetails,
     AnalyzeRequest,
@@ -166,20 +165,6 @@ def _parse_date(value: Optional[str]) -> Optional[float]:
     return None
 
 # ============================================================ style profile
-@router.get("/style-profile", response_model=StyleProfile)
-def get_style_profile(current_user: UserProfile = Depends(get_current_user)):
-    """What the app has learned about how this account writes.
-
-    Returns an honest empty profile when there is nothing to learn from, rather
-    than inventing a style.
-    """
-    learner = StyleLearner(db, current_user.email)
-    profile = learner.build_profile()
-    if not profile.ready:
-        return profile
-    return profile
-
-
 @router.post("/replies/record")
 def record_reply(payload: dict, current_user: UserProfile = Depends(get_current_user)):
     """Record a reply the user actually sent, so style can learn from it.

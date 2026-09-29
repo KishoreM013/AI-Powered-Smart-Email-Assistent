@@ -2,7 +2,6 @@ import copy
 import logging
 import time
 import uuid
-import re
 from datetime import datetime, timezone
 from collections import Counter
 from typing import List, Optional, Dict, Any
@@ -332,6 +331,9 @@ class Database:
         if not target:
             return 0
         self.sent_replies.pop(target, None)
+        # Credentials too. This is the "forget me" primitive, and an OAuth
+        # refresh token left behind outlives the session that created it.
+        self.user_credentials.pop(target, None)
         doomed = [
             k for k, e in self.emails.items() if _norm(e.user_email) == target
         ]

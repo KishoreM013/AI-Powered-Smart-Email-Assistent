@@ -1,3 +1,4 @@
+import logging
 import base64
 import time
 import random
@@ -6,6 +7,9 @@ from app.config import settings
 from app.models.schemas import EmailItem, CategoryEnum, PriorityEnum, EmailSummary, ActionItem, AttachmentInfo
 from app.database.db import db
 from app.services.gemini_service import gemini_service
+
+logger = logging.getLogger("smart_email_assistant")
+
 
 class GmailService:
     @property
@@ -34,13 +38,13 @@ class GmailService:
         ]
         scope_str = "%20".join(scopes)
         return (
-            f"https://accounts.google.com/o/oauth2/v2/auth?"
+            "https://accounts.google.com/o/oauth2/v2/auth?"
             f"client_id={self.client_id}&"
             f"redirect_uri={self.redirect_uri}&"
-            f"response_type=code&"
+            "response_type=code&"
             f"scope={scope_str}&"
-            f"access_type=offline&"
-            f"prompt=consent"
+            "access_type=offline&"
+            "prompt=consent"
         )
 
     def _persist_refreshed(self, user_email: str, creds) -> None:
@@ -68,6 +72,7 @@ class GmailService:
         """
         try:
             from google.oauth2.credentials import Credentials
+            from google.auth.transport.requests import Request
         except Exception:
             return None
         stored = db.get_user_credentials(user_email) or {}
@@ -91,9 +96,15 @@ class GmailService:
             if not creds.refresh_token:
                 return None
             try:
-                creds.refresh(google.auth.transport.requests.Request())
+                creds.refresh(Request())
             except Exception as exc:
-                print(f"[gmail] token refresh failed for {user_email}: {exc}")
+                # An expired or revoked refresh token is not recoverable by
+                # retrying. The user has to reconnect, so say so rather than
+                # logging it and reporting the account as simply disconnected.
+                logger.error(
+                    "Gmail token refresh failed for %s: %s -- "
+                    "the account will need to be reconnected.", user_email, exc,
+                )
                 return None
             self._persist_refreshed(user_email, creds)
         return creds
@@ -251,7 +262,7 @@ Chief Executive Officer""",
                         "Report submission required by 9:00 AM tomorrow",
                         "Executive alignment meeting scheduled for 4:00 PM in executive boardroom"
                     ],
-                    one_liner=f"Urgent board meeting update requested from CEO for tomorrow morning.",
+                    one_liner="Urgent board meeting update requested from CEO for tomorrow morning.",
                     urgency_reason="CEO board meeting deadline tomorrow morning",
                     sentiment="Urgent",
                     key_deadlines=["Tomorrow 9:00 AM", "Tomorrow 4:00 PM"]
@@ -319,7 +330,7 @@ VP of Engineering""",
                 sender_email="notifications@github.com",
                 recipient_email=user_email,
                 subject="[PR Merged] #142 Implement OAuth2 & Gemini Pro Summarizer API",
-                snippet=f"Pull request #142 'Implement OAuth2 & Gemini Pro Summarizer API' was successfully merged into main branch...",
+                snippet="Pull request #142 'Implement OAuth2 & Gemini Pro Summarizer API' was successfully merged into main branch...",
                 body=f"""Hello {user_name},
 
 Pull Request #142 [Implement OAuth2 & Gemini Pro Summarizer API] has been approved and merged into main branch by sarah-jenkins.
