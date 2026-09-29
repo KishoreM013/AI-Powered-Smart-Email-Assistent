@@ -16,3 +16,14 @@ frontend/dist/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# --- secrets: .env holds real API keys; only .env.example is committed ---
+.env
+backend/.env
+*.env
+!.env.example
+# --- local data: never commit mail or the SQLite store ---
+backend/data/
+*.db
+*.db-wal
+*.db-shm
