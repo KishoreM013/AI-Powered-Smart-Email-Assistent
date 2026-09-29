@@ -1,4 +1,3 @@
-import time
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt, JWTError
@@ -8,15 +7,6 @@ from app.config import settings
 from app.models.schemas import UserProfile
 
 security = HTTPBearer(auto_error=False)
-
-DEMO_USER = UserProfile(
-    id="usr-user-01",
-    email="user@gmail.com",
-    name="User Account",
-    avatar="https://api.dicebear.com/7.x/bottts/svg?seed=UserAccount",
-    is_demo=False,
-    connected_gmail=True
-)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -48,9 +38,9 @@ def create_token_for_user(user: UserProfile, expires_delta: Optional[timedelta] 
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> UserProfile:
     """Resolve the caller, or reject the request.
 
-    Fails closed. It used to fall back to DEMO_USER when the token was
-    missing or invalid, so an unauthenticated request was served as a shared
-    demo account instead of being refused.
+    Fails closed. It used to fall back to a shared demo account when the
+    token was missing or invalid, so an unauthenticated request was served
+    as somebody instead of being refused.
     """
     if not credentials or not credentials.credentials:
         raise HTTPException(
@@ -68,13 +58,25 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # A valid signature is not enough: the token must actually name an account.
+    # These fields used to fall back to a shared demo identity, so a token
+    # missing them was accepted as somebody else.
+    subject = payload.get("sub")
+    email = payload.get("email")
+    if not subject or not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session is missing an account",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return UserProfile(
-        id=payload.get("sub", DEMO_USER.id),
-        email=payload.get("email", DEMO_USER.email),
-        name=payload.get("name", DEMO_USER.name),
-        avatar=payload.get("avatar", DEMO_USER.avatar),
+        id=subject,
+        email=email,
+        name=payload.get("name") or email.split("@")[0],
+        avatar=payload.get("avatar") or "",
         is_demo=payload.get("is_demo", False),
-        connected_gmail=payload.get("connected_gmail", True)
+        connected_gmail=payload.get("connected_gmail", True),
     )
 
 async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> Optional[UserProfile]:
@@ -84,11 +86,16 @@ async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCrede
     payload = decode_access_token(token)
     if not payload:
         return None
+    # Optional auth still has to identify somebody. Falling back to a
+    # shared address would hand an anonymous caller a real identity.
+    subject, email = payload.get("sub"), payload.get("email")
+    if not subject or not email:
+        return None
     return UserProfile(
-        id=payload.get("sub", "usr-user-01"),
-        email=payload.get("email", "user@gmail.com"),
-        name=payload.get("name", "User"),
-        avatar=payload.get("avatar", "https://api.dicebear.com/7.x/bottts/svg?seed=User"),
+        id=subject,
+        email=email,
+        name=payload.get("name") or email.split("@")[0],
+        avatar=payload.get("avatar") or "",
         is_demo=payload.get("is_demo", False),
         connected_gmail=payload.get("connected_gmail", True)
     )

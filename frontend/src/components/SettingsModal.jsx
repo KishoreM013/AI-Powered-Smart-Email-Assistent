@@ -18,10 +18,10 @@ export default function SettingsModal({ isOpen, onClose, user, theme, onToggleTh
   };
 
   const userName = user?.name || (user?.email ? user.email.split('@')[0] : "User");
-  const userEmail = user?.email || "user@gmail.com";
+  const userEmail = user?.email || '';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in select-none">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in select-none">
       <div className="bg-white dark:bg-[#0E1322] border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative text-left">
         
         {/* Top Bar Header */}

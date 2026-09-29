@@ -2,6 +2,12 @@ import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Axios resolves with the full response; the rest of the app wants the body.
+// Every helper below goes through this one function.
+function unwrap(response) {
+  return response.data;
+}
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
@@ -64,7 +70,7 @@ export const authAPI = {
     const rawUser = res.data?.user || {};
     const user = {
       id: rawUser.id || 'usr-g-1',
-      email: rawUser.email || payload.email || 'user@gmail.com',
+      email: rawUser.email || payload.email || '',
       name: rawUser.name || payload.name || (payload.email ? payload.email.split('@')[0] : 'User'),
       avatar: rawUser.avatar || rawUser.picture || payload.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${payload.email || 'User'}`,
       connected_gmail: true
@@ -91,10 +97,6 @@ export const authAPI = {
     return { ...res.data, user };
   },
 
-  demoLogin: async (payload = {}) => {
-    return authAPI.googleLogin(payload);
-  },
-
   getMe: async () => {
     try {
       const res = await api.get('/api/auth/me');
@@ -105,9 +107,25 @@ export const authAPI = {
     }
   },
 
-  logout: () => {
-    localStorage.removeItem('smart_email_token');
-    localStorage.removeItem('smart_email_user');
+  /**
+   * Sign out.
+   *
+   * The local token is always dropped, even if the call fails, so a network
+   * error can never leave someone stuck in a signed-in-looking state. The
+   * server-side wipe is best effort for the same reason: a local sign-out that
+   * fails is worse than one that leaves data behind for the timeout to take.
+   */
+  logout: async () => {
+    try {
+      if (localStorage.getItem('smart_email_token')) {
+        await api.post('/api/auth/logout');
+      }
+    } catch {
+      // Deliberately ignored; see above.
+    } finally {
+      localStorage.removeItem('smart_email_token');
+      localStorage.removeItem('smart_email_user');
+    }
   }
 };
 
@@ -122,8 +140,15 @@ export const emailsAPI = {
   },
 
   getEmails: async (params = {}) => {
+    // Empty values are stripped rather than sent: ?tone=&priority= would be
+    // truthy on the server and filter for a category named "".
+    const clean = Object.fromEntries(
+      Object.entries(params).filter(
+        ([, v]) => v !== null && v !== undefined && v !== ''
+      )
+    );
     try {
-      const res = await api.get('/api/emails', { params });
+      const res = await api.get('/api/emails', { params: clean });
       return res.data;
     } catch (e) {
       return [];
@@ -174,6 +199,60 @@ export const emailsAPI = {
       return res.data;
     } catch (e) {
       return { status: 'success', message: 'Email moved to trash' };
+    }
+  },
+
+  /** Analyse an arbitrary email the user pasted, not one from a mailbox. */
+  analyze: (payload) => api.post('/api/emails/analyze', payload).then(unwrap),
+
+  /** Every email this account has analysed, newest first. */
+  getHistory: () => api.get('/api/emails/history').then(unwrap),
+
+  /** Remove an analysed email from history, permanently. */
+  deleteHistoryEntry: (id) =>
+    api.delete(`/api/emails/history/${encodeURIComponent(id)}`).then(unwrap),
+
+  /** What the app has learned about how this account writes. */
+  getStyleProfile: () => api.get('/api/emails/style-profile').then(unwrap),
+
+  /** Phishing verdict for one message. The reading pane calls this on open. */
+  phishingCheck: (emailId, language = 'en') =>
+    api
+      .get(`/api/emails/${encodeURIComponent(emailId)}/phishing-check`, { params: { language } })
+      .then(unwrap),
+
+  /**
+   * Draft a reply for an existing thread.
+   * `tone` is optional: the server falls back to the detected tone.
+   */
+  /**
+   * Draft a reply for an existing thread.
+   *
+   * `tone` is optional: the server falls back to the tone it detected on the
+   * incoming message. `personalize` opts in to drafting in the account
+   * owner's own learned style, and the server reports back whether it
+   * actually had enough sent mail to imitate.
+   */
+  suggestReply: (emailId, tone, language = 'en', personalize = false) => {
+    const params = { language, personalize };
+    if (tone) params.tone = tone;
+    return api
+      .get(`/api/emails/${encodeURIComponent(emailId)}/suggest-reply`, { params })
+      .then(unwrap);
+  },
+
+  /**
+   * Record a reply the user actually sent, so their style can be learned.
+   *
+   * Only delivered mail is worth learning from, which is why this is called on
+   * send rather than on generate.
+   */
+  recordReply: async ({ to, subject, body, sent = true }) => {
+    try {
+      const res = await api.post('/api/emails/replies/record', { to, subject, body, sent });
+      return res.data;
+    } catch {
+      return { status: 'error', reply_count: 0 };
     }
   },
 
@@ -235,7 +314,7 @@ export const emailsAPI = {
         id: "msg_sent_" + Date.now(),
         thread_id: "th_sent_" + Date.now(),
         sender_name: `${data.sender_name || savedUser.name || 'You'}`,
-        sender_email: data.sender_email || savedUser.email || 'user@gmail.com',
+        sender_email: data.sender_email || savedUser.email || '',
         recipient_email: data.recipient,
         subject: data.subject,
         date: "Just now",

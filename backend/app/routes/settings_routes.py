@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Depends
-from typing import Dict, Any
 from app.models.schemas import SettingsUpdateRequest
 from app.database.db import db
 from app.services.gemini_service import gemini_service

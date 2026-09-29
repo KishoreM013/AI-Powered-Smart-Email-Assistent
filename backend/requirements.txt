@@ -1,14 +1,23 @@
-fastapi>=0.110.0
-uvicorn[standard]>=0.28.0
-pydantic>=2.6.0
-pydantic-settings>=2.2.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.9
-google-generativeai>=0.4.0
+# Pinned deliberately.
+#
+# fastapi and starlette must move together: an unbounded `fastapi>=` allowed
+# pip to pair FastAPI 0.141 with Starlette 1.7, and across that major-version
+# gap include_router silently stopped registering routes. starlette is pinned
+# below 1.0 to keep the pair working.
+cryptography>=42.0.0
+fastapi>=0.115.0,<0.142.0
 google-api-python-client>=2.120.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
+google-generativeai>=0.4.0
+httpx>=0.27.0,<1.0.0
+passlib[bcrypt]>=1.7.4
+pydantic-settings>=2.2.0
+pydantic>=2.7.0,<3.0.0
 pypdf>=4.1.0
-httpx>=0.27.0
+python-jose[cryptography]>=3.3.0
+python-multipart>=0.0.9
+starlette>=0.40.0,<1.0.0
 supabase>=2.31.0
+uvicorn[standard]>=0.28.0
+

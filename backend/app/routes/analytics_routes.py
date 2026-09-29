@@ -8,4 +8,4 @@ router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 @router.get("/summary", response_model=AnalyticsSummary)
 def get_analytics_summary(current_user: UserProfile = Depends(get_current_user)):
     """Retrieve full inbox metrics, category distributions, priority breakdowns, and volume trends."""
-    return db.get_analytics()
+    return db.get_analytics(current_user.email)

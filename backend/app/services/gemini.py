@@ -1,7 +1,9 @@
+from app.services.model_registry import build_model
+from app.services import tamil_strings as TA
+from app.services.local_rules import local_analysis, normalise_analysis
 import json
 import logging
-import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 import google.generativeai as genai
 from app.config import settings
 
@@ -30,7 +32,8 @@ async def analyze_email_ai(subject: str, body: str, sender: str) -> Dict[str, An
     await increment_analytics_counter("gemini_calls")
     
     if settings.is_demo or not settings.GEMINI_API_KEY:
-        return get_mock_analysis(subject, body, sender)
+        logger.info("No Gemini key configured; using the local rules.")
+        return local_analysis(subject, body, sender)
 
     prompt = f"""
     Analyze the following email from "{sender}" and provide a structured JSON response.
@@ -39,25 +42,51 @@ async def analyze_email_ai(subject: str, body: str, sender: str) -> Dict[str, An
     Body:
     {body}
 
-    Respond ONLY with a valid JSON object matching this schema (do not include markdown codeblocks or other text):
-    {{
-        "category": "Work | College | Personal | Finance | Shopping | Social | Promotions | Important | Spam",
+      Respond ONLY with a valid JSON object. No markdown, no commentary.
+      Use exactly these keys:
+
+      {{
+        "category": "Work | Personal | Promotions | Finance | Updates | Newsletter | Important | Meeting | Invitation | Spam | Other",
         "category_score": 0.0 to 1.0,
         "priority": "High | Medium | Low",
-        "priority_reason": "Brief explanation",
-        "sentiment": "Positive | Negative | Neutral | Urgent | Happy | Angry | Complaint",
-        "summary": {{
-            "short_summary": "One sentence summary of the email",
-            "key_points": ["Point 1", "Point 2", ...],
-            "action_required": true/false,
-            "deadlines": ["Detected date string or deadline detail", ...],
-            "meetings": ["Detected meeting date/time or scheduled reminder", ...]
-        }}
-    }}
-    """
+        "priority_reason": "one short clause",
+        "sentiment": "Positive | Neutral | Urgent | Frustrated",
+        "tone": "Professional | Formal | Friendly | Angry | Urgent | Neutral",
+        "one_liner": "a single sentence summary",
+        "bullet_points": ["at most 3 short points"],
+        "urgency_reason": "why the priority is what it is, or null",
+        "deadlines": ["explicit due dates or deadlines"],
+        "dates": ["any other dates mentioned"],
+        "people": [{{"name": "person", "role": "job title or null", "email": "or null"}}],
+        "meeting": {{
+          "is_meeting": true or false,
+          "title": "meeting title or null",
+          "date": "date or null",
+          "time": "time or null",
+          "location": "room or address or null",
+          "platform": "Zoom/Meet/Teams or null",
+          "attendees": ["names invited"]
+        }},
+        "action_items": [{{"task": "imperative task", "due_date": "date or null"}}],
+        "important_keywords": ["3 to 6 salient words or short phrases"],
+        "requires_reply": true or false,
+        "importance_score": 0.0 to 1.0
+      }}
+
+      Rules:
+      - "tone" is HOW the sender speaks, not how they feel. A stern but polite
+        CEO is tone=Professional, sentiment=Frustrated.
+      - Use category=Meeting when the email's purpose is to schedule a call.
+        Use Invitation for events, webinars and social invites. Use Important
+        for high-stakes non-scheduling matters: legal, medical, financial.
+      - requires_reply is true when the sender is waiting on an answer.
+      - importance_score is 0.0 to 1.0: how much this matters to the recipient.
+      - Extract only what the email actually says. If there is no meeting, set
+        is_meeting to false rather than inventing one.
+      """
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = build_model()
         response = model.generate_content(prompt)
         text = response.text.strip()
         
@@ -68,11 +97,10 @@ async def analyze_email_ai(subject: str, body: str, sender: str) -> Dict[str, An
             text = text[:-3]
         text = text.strip()
         
-        data = json.loads(text)
-        return data
+        return normalise_analysis(json.loads(text), subject)
     except Exception as e:
-        logger.error(f"Gemini API call failed: {e}. Using mock analysis.")
-        return get_mock_analysis(subject, body, sender)
+        logger.error("Gemini analysis failed (%s); using the local rules.", e)
+        return local_analysis(subject, body, sender)
 
 async def analyze_phishing_ai(subject: str, body: str, sender: str, language: str = "en") -> Dict[str, Any]:
     await increment_analytics_counter("gemini_calls")
@@ -113,7 +141,7 @@ async def analyze_phishing_ai(subject: str, body: str, sender: str, language: st
         }}
         """
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = build_model()
             res = model.generate_content(prompt)
             txt = res.text.strip()
             if txt.startswith("```json"):
@@ -130,30 +158,89 @@ async def analyze_phishing_ai(subject: str, body: str, sender: str, language: st
         "reason": reason
     }
 
-async def generate_smart_reply_ai(subject: str, body: str, sender: str, tone: str = "Professional", language: str = "en") -> str:
-    await increment_analytics_counter("gemini_calls")
-    
-    if settings.is_demo or not settings.GEMINI_API_KEY:
-        return get_mock_reply(subject, body, sender, tone, language)
-        
-    prompt = f"""
-    Write a reply to the following email from "{sender}".
-    Subject: {subject}
-    Email body:
-    {body}
+async def generate_smart_reply_ai(
+    subject: str, body: str, sender: str, tone: str = "Professional",
+    language: str = "en", style_block: str = "",
+) -> str:
+    """Draft a reply, optionally in the account owner's own voice.
 
-    Tone: {tone} (Options: Professional, Friendly, Short)
-    Language: {"Tamil" if language == "ta" else "English"}
-
-    Keep it concise, helpful, and realistic. Return ONLY the body text of the reply in {"Tamil" if language == "ta" else "English"}.
+    ``style_block`` is rendered guidance from StyleLearner: a few quoted
+    examples of how the user actually writes, plus explicit notes about their
+    greeting, sign-off, length and register. Quoting real samples works far
+    better than describing a style in adjectives.
     """
+    await increment_analytics_counter("gemini_calls")
+
+    if settings.is_demo or not settings.GEMINI_API_KEY:
+        return local_reply(subject, sender, tone, language, style_block)
+
+    style_section = f"\n{style_block}\n" if style_block.strip() else ""
+
+    prompt = f"""
+Write a reply to the following email from "{sender}".
+Subject: {subject}
+Email body:
+{body}
+
+Tone: {tone} (Options: Professional, Friendly, Short)
+Language: {"Tamil" if language == "ta" else "English"}
+{style_section}
+Keep it concise, helpful and realistic. Return ONLY the body text of the reply
+in {"Tamil" if language == "ta" else "English"}, with no subject line and no
+commentary about what you did.
+"""
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        model = build_model()
+        if model is None:
+            return local_reply(subject, sender, tone, language, style_block)
+        return model.generate_content(prompt).text.strip()
     except Exception as e:
-        logger.error(f"Gemini reply generation failed: {e}. Using mock reply.")
-        return get_mock_reply(subject, body, sender, tone, language)
+        logger.error("Gemini reply generation failed (%s); using the template.", e)
+        return local_reply(subject, sender, tone, language, style_block)
+
+
+def local_reply(subject: str, sender: str, tone: str, language: str,
+                style_block: str = "") -> str:
+    """A deterministic draft for when the model is unavailable.
+
+    When a learned style is supplied the template still adopts the owner's
+    greeting and sign-off, so personalisation degrades gracefully instead of
+    disappearing along with the model.
+    """
+    greeting = sign_off = None
+    for line in (style_block or "").split("\n"):
+        if line.startswith("- They usually open with ") and "'" in line:
+            greeting = line.split("'")[1]
+        elif line.startswith("- They usually close with ") and "'" in line:
+            sign_off = line.split("'")[1]
+
+    sender = (sender or "").strip()
+    first = sender.split()[0] if sender else ""
+
+    if language == "ta":
+        hi = f"{TA.GREETING} {first}," if first else f"{TA.GREETING},"
+        t = (tone or "").lower()
+        if "short" in t:
+            core = TA.SHORT_BODY_TEMPLATE.format(subject=subject)
+        elif "friendly" in t:
+            core = TA.FRIENDLY_BODY
+        else:
+            core = TA.BODY_TEMPLATE.format(subject=subject)
+        return f"{hi}\n\n{core}\n\n{TA.CLOSER},\n{first}"
+
+    opener = greeting.title() if greeting else "Hi"
+    hi = f"{opener} {first}," if first else f"{opener},"
+    t = (tone or "").lower()
+    if "friendly" in t:
+        core = "Thanks for reaching out, I've had a look and this all makes sense to me."
+    elif "short" in t:
+        core = f"Looking at '{subject}' now, will confirm shortly."
+    else:
+        core = (f"Thanks for the update on '{subject}'. I've reviewed the details "
+                "and will follow up.")
+    closer = sign_off.title() if sign_off else "Best regards"
+    return f"{hi}\n\n{core}\n\n{closer},"
+
 
 async def check_is_spam_ai(subject: str, body: str, sender: str) -> Dict[str, Any]:
     await increment_analytics_counter("gemini_calls")
@@ -181,7 +268,7 @@ async def check_is_spam_ai(subject: str, body: str, sender: str) -> Dict[str, An
         Sender: {sender}
         """
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = build_model()
             res = model.generate_content(prompt)
             txt = res.text.strip()
             if txt.startswith("```json"):
@@ -212,106 +299,3 @@ async def check_is_spam_ai(subject: str, body: str, sender: str) -> Dict[str, An
         "reason": "Flagged by spam keyword check or domain reputation filter." if is_spam else "Normal sender signature.",
         "matched_keywords": matched_kws
     }
-
-def get_mock_analysis(subject: str, body: str, sender: str) -> Dict[str, Any]:
-    # Custom simulation logic based on keywords
-    subj_lower = subject.lower()
-    body_lower = body.lower()
-    
-    category = "Personal"
-    priority = "Low"
-    priority_reason = "No urgent request detected."
-    sentiment = "Neutral"
-    action_required = False
-    deadlines = []
-    meetings = []
-    points = ["Received email correspondence."]
-    
-    # Classify
-    if "interview" in subj_lower or "job" in subj_lower or "offer" in subj_lower:
-        category = "Work"
-        priority = "High"
-        priority_reason = "Contains interview scheduling or job offer detail."
-        sentiment = "Positive"
-        action_required = True
-        deadlines = ["Confirm schedule by tomorrow"]
-        meetings = ["Interview meeting requested"]
-        points = ["Company reached out regarding application.", "Requires active confirmation of interview time slots."]
-    elif "meeting" in subj_lower or "synch" in subj_lower or "discussion" in subj_lower:
-        category = "Work"
-        priority = "Medium"
-        priority_reason = "Calendar coordination requested."
-        sentiment = "Neutral"
-        meetings = ["Synch scheduled this week"]
-        points = ["Invitation to collaborative sync/meeting.", "Coordinate calendar availability."]
-    elif "assignment" in subj_lower or "exam" in subj_lower or "homework" in subj_lower or "class" in subj_lower:
-        category = "College"
-        priority = "High"
-        priority_reason = "Academic timeline & assignment deadlines detected."
-        action_required = True
-        deadlines = ["Friday at 11:59 PM"]
-        points = ["New assignment posted in portal.", "Ensure submission before the deadline."]
-    elif "invoice" in subj_lower or "payment" in subj_lower or "bill" in subj_lower or "receipt" in subj_lower:
-        category = "Finance"
-        priority = "High"
-        priority_reason = "Pending financial payment or transaction warning."
-        sentiment = "Urgent"
-        action_required = True
-        deadlines = ["Payment due within 3 days"]
-        points = ["Invoice generated for review.", "Requires clearing pending balance."]
-    elif "order" in subj_lower or "amazon" in subj_lower or "shipping" in subj_lower or "delivery" in subj_lower:
-        category = "Shopping"
-        priority = "Low"
-        sentiment = "Positive"
-        points = ["Package order confirmation.", "Tracking details included in description."]
-    elif "sale" in subj_lower or "discount" in subj_lower or "off" in subj_lower or "promo" in subj_lower:
-        category = "Promotions"
-        priority = "Low"
-        points = ["Promotional code and discount coupon details.", "Valid for limited time only."]
-    elif "boss" in sender.lower() or "manager" in sender.lower() or "ceo" in sender.lower():
-        category = "Work"
-        priority = "High"
-        priority_reason = "Email sent by critical organizational contact."
-        sentiment = "Urgent"
-        action_required = True
-        points = ["Project direction review.", "Requires direct attention and reply."]
-    
-    # Generic extraction if lists empty
-    if not points:
-        points = [f"Brief description: {subject}"]
-
-    return {
-        "category": category,
-        "category_score": 0.92,
-        "priority": priority,
-        "priority_reason": priority_reason,
-        "sentiment": sentiment,
-        "summary": {
-            "short_summary": f"Discussion regarding {subject}.",
-            "key_points": points,
-            "action_required": action_required,
-            "deadlines": deadlines,
-            "meetings": meetings
-        }
-    }
-
-def get_mock_reply(subject: str, body: str, sender: str, tone: str = "Professional", language: str = "en") -> str:
-    sender_clean = sender.split('<')[0].strip()
-    if language == "ta":
-        if tone == "Professional":
-            return f"வணக்கம் {sender_clean},\n\nஉங்கள் மின்னஞ்சல் கிடைத்தது. '{subject}' தொடர்பான விவரங்களை மதிப்பாய்வு செய்து விரைவில் தகுந்த பதில் அனுப்புகிறேன்.\n\nநன்றி,\nகரன்"
-        elif tone == "Friendly":
-            return f"வணக்கம்!\n\nதகவலுக்கு மிக்க நன்றி. நான் உடனடியாக இதைச் சரிபார்த்துவிட்டுப் பதில் அளிக்கிறேன். நல்ல நாளாக அமையட்டும்!\n\nஅன்புடன்,\nகரன்"
-        elif tone == "Short":
-            return "செய்தி கிடைத்தது, நன்றி. விரைவில் தொடர்பு கொள்கிறேன்."
-        else:
-            return f"வணக்கம் {sender_clean},\n\nஉங்கள் மின்னஞ்சல் '{subject}' கிடைத்தது. விவரங்களைச் சரிபார்த்து விரைவில் பதில் அனுப்புகிறேன்.\n\nநன்றி."
-    else:
-        if tone == "Professional":
-            return f"Hi {sender_clean},\n\nThank you for reaching out. I have received your message regarding '{subject}' and will review the details. I will get back to you with a comprehensive response shortly.\n\nBest regards,\nKaran"
-        elif tone == "Friendly":
-            return f"Hi there!\n\nThanks for sending this over. I'll take a look at it right away and get back to you. Hope you have a great day!\n\nCheers,\nKaran"
-        elif tone == "Short":
-            return "Received, thank you. I'll follow up shortly."
-        else:
-            return f"Hi {sender_clean},\n\nThank you for your email regarding '{subject}'. I have noted the details and will follow up with you as soon as possible.\n\nBest regards,\nKaran"

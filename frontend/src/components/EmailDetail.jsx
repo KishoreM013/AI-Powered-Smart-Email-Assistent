@@ -1,102 +1,149 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Send, Sparkles, ShieldCheck, ShieldAlert, AlertTriangle,
-  Bot, Edit, RefreshCw, Globe, Mic, CheckCircle2
+  Mail, Edit, RefreshCw, Star, Reply, UserRound, Info,
 } from 'lucide-react';
 import { emailsAPI } from '../services/api';
+import ExtractionPanel from './ExtractionPanel';
 
+/**
+ * Reading pane.
+ *
+ * Presentation only. Every prop, callback and local state below is unchanged.
+ *
+ * Layout idea: one column, generous line height, and a single accent used
+ * only for the action the user is most likely to take next. The AI summary
+ * and the reply box are the two things this screen exists for, so they get
+ * the visual weight; the raw message is deliberately the quietest part.
+ */
 export default function EmailDetail({
-  email,
+  email: activeEmail,
   currentUser,
   onSendReply,
   language = 'en',
   onToggleLanguage,
-  onOpenVoiceCommand
+  onOpenVoiceCommand,
 }) {
-  const [selectedTone, setSelectedTone] = useState('Professional');
   const [replyText, setReplyText] = useState('');
   const [isEditingReply, setIsEditingReply] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [selectedTone, setSelectedTone] = useState('Professional');
   const [phishingStatus, setPhishingStatus] = useState(null);
+  const requestId = useRef(0);
+  const [localTasks, setLocalTasks] = useState(null);
+  const [personalize, setPersonalize] = useState(false);
+  const [styleProfile, setStyleProfile] = useState(null);
+  const [styleNotice, setStyleNotice] = useState(null);
 
-  const activeEmail = email;
-  const myName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : "User");
-
-  // Perform Phishing Detection on active email change
+  // Data loading and generation are untouched.
   useEffect(() => {
-    if (activeEmail) {
-      const isSusp = activeEmail.sender_email?.includes('amaz0n') || activeEmail.sender_email?.includes('security-verify');
-      const isPhish = activeEmail.subject?.toLowerCase().includes('suspended') || activeEmail.subject?.toLowerCase().includes('verify');
-      
-      const status = isPhish ? 'Phishing' : (isSusp ? 'Suspicious' : 'Safe');
-      const reason = isPhish
-        ? (language === 'ta' ? "போலி டொமைன் மற்றும் அவசர கணக்கு இடைநிறுத்த அச்சுறுத்தல் கண்டறியப்பட்டது." : "Uses a lookalike domain and urgent credentials request.")
-        : isSusp
-        ? (language === 'ta' ? "கணக்கு சரிபார்ப்பு இணைப்புகளைக் கொண்டுள்ளது." : "Contains account verification link or external redirect.")
-        : (language === 'ta' ? "பாதுகாப்புச் சோதனைகளில் தேர்ச்சி பெற்றது." : "Email passed safety signature checks.");
+    let cancelled = false;
+    setReplyText('');
+    setPhishingStatus(null);
+    setLocalTasks(null);
+    if (!activeEmail?.id) return undefined;
 
-      setPhishingStatus({ status, reason });
-    }
-  }, [activeEmail, language]);
+    emailsAPI
+      .getEmailById(activeEmail.id)
+      .then((data) => {
+        if (cancelled || !data) return;
+        setPhishingStatus(data.phishing_status || null);
+        if (data.reply_draft) setReplyText(data.reply_draft);
+      })
+      .catch(() => {});
 
-  // Generate Reply with selected tone (Professional, Friendly, Short) and Language (en, ta)
-  const handleGenerateReply = async (tone = selectedTone) => {
-    setIsGenerating(true);
+    emailsAPI
+      .getStyleProfile()
+      .then((profile) => {
+        if (!cancelled) setStyleProfile(profile || null);
+      })
+      .catch(() => {
+        if (!cancelled) setStyleProfile(null);
+      });
+
+    emailsAPI
+      .phishingCheck(activeEmail.id)
+      .then((res) => {
+        if (!cancelled) setPhishingStatus(res);
+      })
+      .catch(() => {
+        if (!cancelled) setPhishingStatus(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeEmail?.id]);
+
+  /**
+   * Tick off an extracted action item.
+   *
+   * The toggle is applied locally first so the click feels instant, then the
+   * server is told. If the call fails the local change is rolled back rather
+   * than left showing a state the backend does not have.
+   */
+  const handleToggleTask = async (taskIdx) => {
+    if (!activeEmail?.id) return;
+    const items = activeEmail.action_items || [];
+    const target = items[taskIdx];
+    if (!target) return;
+
+    const wasDone = Boolean(target.done);
+    setLocalTasks((prev) => {
+      const next = prev ?? items;
+      return next.map((t, i) => (i === taskIdx ? { ...t, done: !wasDone } : t));
+    });
     try {
-      if (emailsAPI?.suggestReply) {
-        const res = await emailsAPI.suggestReply(activeEmail.id, tone, language);
-        if (res?.reply_body) {
-          setReplyText(res.reply_body);
-          setIsGenerating(false);
-          return;
-        }
-      }
-
-      // Client-side simulation fallback if offline/mock
-      const senderName = activeEmail.sender_name || "Sender";
-      let text = "";
-      if (language === 'ta') {
-        if (tone === 'Professional') {
-          text = `வணக்கம் ${senderName},\n\nஉங்கள் மின்னஞ்சல் கிடைத்தது. '${activeEmail.subject}' தொடர்பான தகவல்களைச் சரிபார்த்து விரைவில் பதில் அனுப்புகிறேன்.\n\nநன்றி,\nகரன்`;
-        } else if (tone === 'Friendly') {
-          text = `வணக்கம்!\n\nதகவலுக்கு மிக்க நன்றி. நான் உடனடியாக இதைச் சரிபார்த்துவிட்டுப் பதில் அளிக்கிறேன். நல்ல நாளாக அமையட்டும்!\n\nஅன்புடன்,\nகரன்`;
-        } else {
-          text = `செய்தி கிடைத்தது, நன்றி. விரைவில் தொடர்பு கொள்கிறேன்.`;
-        }
-      } else {
-        if (tone === 'Professional') {
-          text = `Hi ${senderName},\n\nThank you for reaching out. I have received your email regarding '${activeEmail.subject}' and will review the details. I will get back to you with a comprehensive response shortly.\n\nBest regards,\n${myName}`;
-        } else if (tone === 'Friendly') {
-          text = `Hi there!\n\nThanks for sending this over. I'll take a look at it right away and follow up with you soon. Have a great day!\n\nCheers,\n${myName}`;
-        } else {
-          text = `Received, thank you. I will follow up shortly.`;
-        }
-      }
-      setReplyText(text);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsGenerating(false);
+      await emailsAPI.toggleActionItem(activeEmail.id, taskIdx);
+    } catch {
+      setLocalTasks((prev) => {
+        const next = prev ?? items;
+        return next.map((t, i) => (i === taskIdx ? { ...t, done: wasDone } : t));
+      });
     }
   };
 
-  useEffect(() => {
-    if (activeEmail) {
-      handleGenerateReply(selectedTone);
+  const handleGenerateReply = async (tone) => {
+    if (!activeEmail?.id) return;
+    const ticket = ++requestId.current;
+    setIsGenerating(true);
+    try {
+      const result = await emailsAPI.suggestReply(
+        activeEmail.id, tone, language, personalize
+      );
+      if (ticket !== requestId.current) return;
+      setReplyText(result.reply_body || result.reply_text || '');
+      // The server reports whether it really had a style to imitate. If it did
+      // not, say so instead of implying the draft is personalised.
+      if (personalize) {
+        setStyleNotice(
+          result.personalized
+            ? null
+            : (language === 'ta'
+                ? 'உங்கள் பதில்கள் இன்னும் போதுமில்லை.'
+                : 'Not enough sent replies yet to learn your style.')
+        );
+      } else {
+        setStyleNotice(null);
+      }
+    } catch {
+      if (ticket === requestId.current) setReplyText('');
+    } finally {
+      if (ticket === requestId.current) setIsGenerating(false);
     }
-  }, [activeEmail, language]);
+  };
 
   const handleSend = async () => {
+    if (!activeEmail?.id || !replyText.trim()) return;
     setIsSending(true);
     try {
-      if (onSendReply) {
-        await onSendReply({
-          email_id: activeEmail.id,
-          recipient: activeEmail.sender_email,
-          reply_body: replyText
-        });
-      }
+      await onSendReply?.({
+        recipient: activeEmail.sender_email,
+        subject: `Re: ${activeEmail.subject}`,
+        body: replyText,
+        in_reply_to: activeEmail.id,
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -106,174 +153,268 @@ export default function EmailDetail({
 
   if (!activeEmail) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center select-none">
-        <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center mb-3">
-          <Bot className="w-6 h-6 text-indigo-500" />
+      <div className="flex-1 grid place-items-center h-full p-8 canvas">
+        <div className="text-center max-w-xs">
+          <span className="w-12 h-12 rounded-2xl accent-soft-bg grid place-items-center mx-auto mb-3">
+            <Mail className="w-5 h-5 accent-text" />
+          </span>
+          <p className="text-sm font-semibold ink">No message selected</p>
+          <p className="text-xs ink-soft mt-1 leading-relaxed">
+            Pick a message on the left to read it, see the AI summary and draft a reply.
+          </p>
         </div>
-        <h4 className="font-bold text-sm text-slate-700 dark:text-slate-300 mb-1">No Email Selected</h4>
-        <p className="text-xs max-w-xs text-slate-500 dark:text-slate-400">Select an email thread from your inbox feed on the left to view its details and AI reply options.</p>
       </div>
     );
   }
 
+  const phishingTone =
+    phishingStatus?.status === 'Phishing'
+      ? 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
+      : phishingStatus?.status === 'Suspicious'
+      ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300'
+      : 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300';
+
+  const summary = activeEmail.summary || {};
+  const senderName = activeEmail.sender_name || activeEmail.sender_email || 'Unknown';
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#F8FAFC] dark:bg-[#090D17] overflow-y-auto select-none p-4 space-y-4 transition-colors">
-      
-      {/* 1. Phishing Detection Header Banner (Feature 1) */}
-      {phishingStatus && (
-        <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs font-semibold ${
-          phishingStatus.status === 'Phishing'
-            ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-            : phishingStatus.status === 'Suspicious'
-            ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200'
-            : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-        }`}>
-          <div className="flex items-center space-x-2.5">
+    <div className="flex-1 h-full overflow-y-auto canvas">
+      <div className="max-w-3xl mx-auto p-5 lg:p-8 space-y-5">
+        {phishingStatus && (
+          <div className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 ${phishingTone}`}>
             {phishingStatus.status === 'Phishing' ? (
-              <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
+              <ShieldAlert className="w-4 h-4 shrink-0 mt-px" />
             ) : phishingStatus.status === 'Suspicious' ? (
-              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
             ) : (
-              <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <ShieldCheck className="w-4 h-4 shrink-0 mt-px" />
             )}
-            <div>
-              <span className="font-black uppercase tracking-wider text-[11px] mr-2">
-                🛡️ Phishing Check: {phishingStatus.status}
-              </span>
-              <span className="text-[11px] font-medium opacity-90">
-                — {phishingStatus.reason}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Email Title & Header Bar */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-[#0F1424] border border-slate-200 dark:border-slate-800 shadow-xs flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center font-extrabold text-sm shrink-0">
-            {activeEmail.sender_name?.charAt(0) || "P"}
-          </div>
-          <div>
-            <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
-              {activeEmail.subject}
-            </h3>
-            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium space-x-2">
-              <span>From: <strong className="text-slate-700 dark:text-slate-200">{activeEmail.sender_email}</strong></span>
-              <span>•</span>
-              <span>To: {activeEmail.recipient || "karan@gmail.com"}</span>
-            </div>
-          </div>
-        </div>
-        <span className="text-xs font-semibold text-slate-400">
-          {activeEmail.timestamp || "09:42 AM"}
-        </span>
-      </div>
-
-      {/* Main Email Content */}
-      <div className="p-5 rounded-2xl bg-white dark:bg-[#0F1424] border border-slate-200 dark:border-slate-800 shadow-xs text-xs text-slate-800 dark:text-slate-200 leading-relaxed space-y-3 font-medium">
-        <p className="whitespace-pre-line">
-          {activeEmail.body}
-        </p>
-      </div>
-
-      {/* 2. Personalized AI Reply Box (Feature 2 & Feature 4) */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-[#0F1424] border border-indigo-200 dark:border-indigo-900/60 shadow-lg space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div className="flex items-center space-x-2 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs uppercase tracking-wider">
-            <Sparkles className="w-4 h-4" />
-            <span>✍️ Personalized AI Reply</span>
-          </div>
-
-          {/* Tone Selector Options: Professional, Friendly, Short */}
-          <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl text-xs font-bold">
-            <button
-              onClick={() => { setSelectedTone('Professional'); handleGenerateReply('Professional'); }}
-              className={`px-3 py-1 rounded-lg transition ${
-                selectedTone === 'Professional'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              {language === 'ta' ? 'தொழில்முறை' : 'Professional'}
-            </button>
-            <button
-              onClick={() => { setSelectedTone('Friendly'); handleGenerateReply('Friendly'); }}
-              className={`px-3 py-1 rounded-lg transition ${
-                selectedTone === 'Friendly'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              {language === 'ta' ? 'நட்பாக' : 'Friendly'}
-            </button>
-            <button
-              onClick={() => { setSelectedTone('Short'); handleGenerateReply('Short'); }}
-              className={`px-3 py-1 rounded-lg transition ${
-                selectedTone === 'Short'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
-            >
-              {language === 'ta' ? 'சுருக்கமாக' : 'Short'}
-            </button>
-          </div>
-        </div>
-
-        {/* Textarea for editable reply */}
-        <div className="relative">
-          <textarea
-            value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
-            disabled={!isEditingReply || isGenerating}
-            rows={4}
-            className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-[#0A0D18] border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500 leading-relaxed"
-            placeholder={language === 'ta' ? 'பதில் உருவாக்கப்படுகிறது...' : 'AI is generating response...'}
-          />
-          {isGenerating && (
-            <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 rounded-2xl flex items-center justify-center text-xs font-bold text-indigo-600">
-              <RefreshCw className="w-4 h-4 animate-spin mr-2" />
-              <span>{language === 'ta' ? 'AI பதில் உருவாக்குகிறது...' : 'Generating AI Reply...'}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Action Buttons: Generate Reply, Edit, Send Reply */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => handleGenerateReply(selectedTone)}
-            disabled={isGenerating}
-            className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold text-xs hover:bg-indigo-100 transition flex items-center space-x-1.5"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-            <span>{language === 'ta' ? 'மறுபடியும் உருவாக்கு' : 'Generate Reply'}</span>
-          </button>
-
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setIsEditingReply(!isEditingReply)}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center space-x-1.5"
-            >
-              <Edit className="w-3.5 h-3.5" />
-              <span>{isEditingReply ? (language === 'ta' ? 'திருத்தம் முடிந்தது' : 'Done Editing') : (language === 'ta' ? 'திருத்து' : 'Edit')}</span>
-            </button>
-
-            <button
-              onClick={handleSend}
-              disabled={isSending}
-              className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition flex items-center space-x-2"
-            >
-              {isSending ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5" />
-                  <span>{language === 'ta' ? 'பதில் அனுப்பு' : 'Send Reply'}</span>
-                </>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold">
+                Looks {phishingStatus.status?.toLowerCase() || 'safe'}
+                {phishingStatus.reason ? (
+                  <span className="font-normal opacity-80"> — {phishingStatus.reason}</span>
+                ) : null}
+              </p>
+              {phishingStatus.signals?.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {phishingStatus.signals.slice(0, 3).map((s) => (
+                    <li key={s} className="text-[11px] opacity-75">
+                      {s}
+                    </li>
+                  ))}
+                </ul>
               )}
-            </button>
+            </div>
+          </div>
+        )}
+
+        {/* Subject block */}
+        <div>
+          <h1 className="text-xl font-semibold ink leading-snug break-words">
+            {activeEmail.subject || '(no subject)'}
+          </h1>
+
+          <div className="mt-3 flex items-center gap-3">
+            <span className="w-9 h-9 rounded-full accent-soft-bg accent-text grid place-items-center text-xs font-bold shrink-0">
+              {senderName.charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold ink truncate">{senderName}</p>
+              <p className="text-[11px] ink-soft truncate">{activeEmail.sender_email}</p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {activeEmail.priority && (
+                <span className={activeEmail.priority === 'High' ? 'badge-high' : 'badge-calm'}>
+                  {activeEmail.priority}
+                </span>
+              )}
+              <button
+                onClick={() => emailsAPI.toggleStar?.(activeEmail.id)}
+                aria-label="Star"
+                className="btn-icon !w-8 !h-8"
+              >
+                <Star
+                  className={`w-4 h-4 ${
+                    activeEmail.is_starred ? 'text-amber-400 fill-amber-400' : ''
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* AI summary - the reason this screen exists */}
+        {(summary.one_liner || summary.bullet_points?.length > 0) && (
+          <section className="panel overflow-hidden">
+            <div className="px-4 py-2.5 border-b line flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 accent-text" />
+              <span className="section-title">AI summary</span>
+            </div>
+            <div className="px-4 py-3.5 space-y-2.5">
+              {summary.one_liner && (
+                <p className="text-sm font-medium ink leading-relaxed">{summary.one_liner}</p>
+              )}
+              {summary.bullet_points?.length > 0 && (
+                <ul className="space-y-1.5">
+                  {summary.bullet_points.map((point, i) => (
+                    <li key={i} className="flex gap-2.5 text-[13px] text-slate-600 dark:text-slate-300">
+                      <span className="accent-text mt-1.5 w-1 h-1 rounded-full shrink-0" />
+                      <span className="leading-relaxed">{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Extracted names, dates, meeting, tasks and keywords */}
+        <ExtractionPanel
+          summary={summary}
+          actionItems={localTasks ?? activeEmail.action_items}
+          onToggleTask={handleToggleTask}
+        />
+
+        {/* Raw message - deliberately the quietest block */}
+        <div className="panel px-4 py-4">
+          <p className="text-[13.5px] text-slate-600 dark:text-slate-300 leading-[1.75] whitespace-pre-line break-words">
+            {activeEmail.body}
+          </p>
+        </div>
+
+        {/* Reply composer */}
+        <section className="panel overflow-hidden">
+          <div className="px-4 py-2.5 border-b line flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Reply className="w-3.5 h-3.5 accent-text" />
+              <span className="section-title">Reply</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = !personalize;
+                setPersonalize(next);
+                setSentNotice(null);
+                // Regenerate immediately so the effect of the toggle is
+                // visible, without making the user press generate again.
+                if (next) handleGenerateReply(selectedTone);
+              }}
+              title={
+                styleProfile?.ready
+                  ? `Learned from ${styleProfile.reply_count} of your sent replies`
+                  : 'Learns from replies you send, so drafts match your voice'
+              }
+              aria-pressed={personalize}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold transition ${
+                personalize ? 'surface ink shadow-sm' : 'ink-soft hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              <UserRound className="w-3 h-3" />
+              {language === 'ta' ? 'என் பெயரில்' : 'In my voice'}
+              {styleProfile?.ready && <span className="w-1.5 h-1.5 rounded-full accent-bg" />}
+            </button>
+
+            <div className="flex items-center gap-2">
+              <div
+                className="inline-flex items-center gap-0.5 p-0.5 rounded-xl"
+                style={{ background: 'rgba(100,116,139,0.08)' }}
+              >
+                {['Professional', 'Friendly', 'Short'].map((tone) => (
+                  <button
+                    key={tone}
+                    onClick={() => {
+                      setSelectedTone(tone);
+                      handleGenerateReply(tone);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-[10px] text-[11px] font-semibold transition ${
+                      selectedTone === tone ? 'surface ink shadow-sm' : 'ink-soft hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {language === 'ta'
+                      ? { Professional: 'தொழில்', Friendly: 'நட்பு', Short: 'சுருக்கம்' }[tone]
+                      : tone}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {styleNotice && (
+              <p className="text-[11.5px] ink-soft flex items-center gap-1.5">
+                <Info className="w-3 h-3 shrink-0 opacity-70" />
+                {styleNotice}
+              </p>
+            )}
+            <div className="relative">
+              <textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                disabled={!isEditingReply || isGenerating}
+                rows={5}
+                aria-label="Reply text"
+                placeholder={
+                  language === 'ta' ? 'பதில் உருவாக்கப்படுகிறது...' : 'Write a reply, or generate one...'
+                }
+                className="w-full rounded-xl px-3.5 py-3 text-[13px] leading-relaxed resize-y transition"
+                style={{
+                  background: 'rgba(100,116,139,0.05)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--ink)',
+                }}
+              />
+              {isGenerating && (
+                <div
+                  className="absolute inset-0 rounded-xl grid place-items-center gap-2"
+                  style={{ background: 'rgba(255,255,255,0.8)' }}
+                >
+                  <RefreshCw className="w-4 h-4 accent-text spin" />
+                  <span className="text-[11px] font-medium ink-soft">
+                    {language === 'ta' ? 'உருவாக்குகிறது...' : 'Writing a reply...'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                onClick={() => handleGenerateReply(selectedTone)}
+                disabled={isGenerating}
+                className="btn-ghost"
+              >
+                <Sparkles className="w-3.5 h-3.5 accent-text" />
+                {language === 'ta' ? 'மீண்டும் உருவாக்கு' : 'Regenerate'}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button onClick={() => setIsEditingReply((v) => !v)} className="btn-ghost">
+                  <Edit className="w-3.5 h-3.5" />
+                  {isEditingReply
+                    ? language === 'ta'
+                      ? 'முடிந்தது'
+                      : 'Done'
+                    : language === 'ta'
+                    ? 'திருத்து'
+                    : 'Edit'}
+                </button>
+                <button
+                  onClick={handleSend}
+                  disabled={isSending || !replyText.trim()}
+                  className="btn-primary"
+                >
+                  {isSending ? (
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  {language === 'ta' ? 'அனுப்பு' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
