@@ -145,7 +145,20 @@ _DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if _DIST.is_dir():
     _ASSETS = _DIST / "assets"
     if _ASSETS.is_dir():
-        app.mount("/assets", StaticFiles(directory=_ASSETS), name="assets")
+        # Vite fingerprints asset filenames, so they can be cached hard. The
+        # entry document must never be cached, or a browser keeps requesting
+        # an old bundle hash after a deploy and renders nothing.
+        assets = StaticFiles(directory=_ASSETS)
+
+        @app.middleware("http")
+        async def _asset_cache(request, call_next):
+            if request.url.path.startswith("/assets/"):
+                response = await call_next(request)
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                return response
+            return await call_next(request)
+
+        app.mount("/assets", assets, name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa(full_path: str):
@@ -155,8 +168,13 @@ if _DIST.is_dir():
             candidate = (_DIST / full_path).resolve()
             # Keep the lookup inside dist/ even if a path tries to escape it.
             if candidate.is_file() and candidate.is_relative_to(_DIST.resolve()):
-                return FileResponse(candidate)
-        return FileResponse(_DIST / "index.html")
+                return FileResponse(
+                    candidate, headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+                )
+        # Never cached: see the note on the assets mount above.
+        return FileResponse(
+            _DIST / "index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
 else:  # pragma: no cover
     logger.warning("frontend/dist not found at %s - serving the API only.", _DIST)
 
