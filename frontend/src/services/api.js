@@ -1,6 +1,15 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+// Supabase Edge Function URL, from `supabase functions list`.
+//
+// A bare '' would resolve against the current origin, which works when the
+// frontend is served by the same host as the function. It does not work for
+// Vercel or Netlify, which have no route for /api/*, so the URL is required
+// rather than optional. The 10s timeout is raised too: a cold-started edge
+// function plus a Gemini call can exceed 10s and would otherwise surface as a
+// spurious network error.
+const API_BASE = import.meta.env.VITE_SUPABASE_FUNCTION_URL || import.meta.env.VITE_API_URL || '';
+export const API_CONFIGURED = Boolean(API_BASE);
 
 // Axios resolves with the full response; the rest of the app wants the body.
 // Every helper below goes through this one function.
@@ -12,8 +21,11 @@ const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
+    // Supabase's gateway requires these on every request even though this
+    // function sets verify_jwt = false.
+    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   },
-  timeout: 10000,
+  timeout: 30000,
 });
 
 // Attach JWT token to requests if available
@@ -173,23 +185,36 @@ export const emailsAPI = {
     }
   },
 
-  toggleRead: async (id) => {
+  /**
+   * Flip read state.
+   *
+   * This is a PATCH of {is_read}, not a dedicated toggle endpoint. It was
+   * calling POST /toggle-read, which has never existed on the backend, so the
+   * call 404'd and the catch block faked success -- which is why opening an
+   * email appeared to work while nothing was ever persisted.
+   *
+   * The new value is computed here and sent explicitly, so a double-click
+   * cannot invert the wrong way.
+   */
+  toggleRead: async (id, currentState) => {
+    const isRead = typeof currentState === 'boolean' ? !currentState : undefined;
     try {
-      const res = await api.post(`/api/emails/${id}/toggle-read`);
+      const res = await api.patch(`/api/emails/${encodeURIComponent(id)}`, { is_read: isRead });
       return res.data;
     } catch (e) {
       const target = FALLBACK_EMAILS.find(item => item.id === id) || FALLBACK_EMAILS[0];
-      return { ...target, is_read: !target.is_read };
+      return { ...target, is_read: isRead ?? !target.is_read };
     }
   },
 
-  toggleStar: async (id) => {
+  toggleStar: async (id, currentState) => {
+    const isStarred = typeof currentState === 'boolean' ? !currentState : undefined;
     try {
-      const res = await api.post(`/api/emails/${id}/toggle-star`);
+      const res = await api.patch(`/api/emails/${encodeURIComponent(id)}`, { is_starred: isStarred });
       return res.data;
     } catch (e) {
       const target = FALLBACK_EMAILS.find(item => item.id === id) || FALLBACK_EMAILS[0];
-      return { ...target, is_starred: !target.is_starred };
+      return { ...target, is_starred: isStarred ?? !target.is_starred };
     }
   },
 
@@ -258,7 +283,7 @@ export const emailsAPI = {
 
   toggleActionItem: async (emailId, taskIdx) => {
     try {
-      const res = await api.post(`/api/emails/${emailId}/action-items/${taskIdx}/toggle`);
+      const res = await api.post(`/api/emails/${encodeURIComponent(emailId)}/action-items/${taskIdx}/toggle`);
       return res.data;
     } catch (e) {
       const target = FALLBACK_EMAILS.find(item => item.id === emailId) || FALLBACK_EMAILS[0];
