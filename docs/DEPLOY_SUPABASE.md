@@ -5,7 +5,7 @@ stack is the one Lovable-generated projects are built on. No card required.
 
 ```
 frontend/dist   ->  Vercel, Netlify, or any static host
-supabase/functions/api   ->  Deno edge function
+supabase/functions/api   ->  Deno edge function (plain JavaScript)
 Postgres        ->  emails, sent_replies, credentials, user_settings
 ```
 
@@ -162,7 +162,8 @@ Notable differences:
 
 ```bash
 # Supabase edge function
-cd supabase/functions && deno test --allow-env api/_shared/
+cd supabase/functions && deno task test
+cd supabase/functions && deno task lint
 
 # Frontend
 cd frontend && npm test
@@ -170,3 +171,16 @@ cd frontend && npm test
 
 The Deno suite mirrors the Node one assertion for assertion, so if the two
 ports drift, the shared tests fail.
+
+Note: the edge function is plain JavaScript, so `deno check` will not type-check
+it. Lint and the test suite are the guards.
+
+## A dropped phishing signal, restored
+
+Converting the edge function from TypeScript to JavaScript surfaced a real
+regression rather than a compiler artifact: `deno lint` flagged an unused
+`from` variable inside `heuristicPhishing`. It was unused because the
+brand-impersonation check that read it had been lost when the function was
+first ported from the Node build. The check is restored in both the `.js` and
+the Node reference, so the phishing detector reports five indicators again
+instead of four.

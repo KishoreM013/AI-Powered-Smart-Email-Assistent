@@ -288,7 +288,7 @@ export default function LoginPage({ onLoginSuccess }) {
 
           {/* Expandable Google Permissions Breakdown */}
           {showPermissions && (
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] space-y-2 text-slate-600 dark:text-slate-300 animate-in fade-in">
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] space-y-2 text-slate-600 dark:text-slate-300 animate-fade-in">
               <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Google OAuth 2.0 Scopes Requested:</span>

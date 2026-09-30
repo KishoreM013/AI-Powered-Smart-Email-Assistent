@@ -18,7 +18,7 @@ export default function AISummaryModal({ isOpen, onClose, emails = [] }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in select-none">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
       <div className="bg-white dark:bg-[#0E1322] border border-indigo-200 dark:border-indigo-900/60 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative text-left">
         
         {/* Header */}

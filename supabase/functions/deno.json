@@ -4,10 +4,16 @@
   "imports": {
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
     "@google/genai": "npm:@google/genai@1",
-    "googleapis": "npm:googleapis@160"
+    "googleapis": "npm:googleapis@160",
+    "@std/assert": "jsr:@std/assert@1"
+  },
+  "tasks": {
+    "//test": "--allow-env for the config module, --allow-read for the contract test that reads the router source.",
+    "test": "deno test --allow-env --allow-read api/_shared/",
+    "lint": "deno lint api/"
   },
   "compilerOptions": {
-    "strict": true,
+    "checkJs": false,
     "lib": ["deno.ns", "dom", "esnext"]
   }
 }

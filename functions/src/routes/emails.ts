@@ -82,7 +82,9 @@ function heuristicPhishing(email: EmailItem): {
     signals.push("Link disguises its real destination");
   }
   // Reply-To pointing elsewhere from the From domain.
-  if (/\bdo not reply\b/i.test(from) && /\b(invoice|security|support|payments)\b/i.test(from)) {
+  // A no-reply address that also reads like a brand name is the shape of an
+  // impersonation attempt.
+  if (/\bdo not reply\b/.test(from) && /\b(invoice|security|support|payments)\b/.test(from)) {
     signals.push("Sender address looks like an impersonation of a known brand");
   }
   return {

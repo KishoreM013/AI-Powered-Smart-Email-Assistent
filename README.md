@@ -42,9 +42,9 @@ smart-email-assistant/
   │   ├── migrations/         # Postgres schema + RLS deny-all
   │   ├── config.toml         # function config (verify_jwt = false)
   │   └── functions/api/
-  │       ├── index.ts        # Deno.serve + router, all 33 endpoints
+  │       ├── index.js        # Deno.serve + router, all 33 endpoints
   │       ├── _shared/        # store, auth, crypto, gemini, gmail, ocr, rules
-  │       └── *_test.ts       # 37 tests, run with `deno test`
+  │       └── *_test.js       # 37 tests, run with `deno test`
   ├── frontend/               # React SPA, served by Vercel/Netlify/Pages
   ├── backend/                # superseded Python backend, local runs only
   ├── contract/openapi.json   # frozen HTTP contract from the Python backend
@@ -102,9 +102,14 @@ and extract deterministically, so the free tier is genuinely usable.
 ### Tests
 
 ```bash
-cd supabase/functions && deno test --allow-env api/_shared/   # 37 tests
-cd frontend && npm test                                       # 23 tests
+cd supabase/functions && deno task test     # 37 tests
+cd supabase/functions && deno task lint
+cd frontend && npm test                     # 23 tests
 ```
+
+The backend is plain JavaScript, not TypeScript. `deno check` therefore does
+not type-check it, so `deno task lint` and the test suite are the only
+automated guards.
 
 ### Running the old Python backend
 

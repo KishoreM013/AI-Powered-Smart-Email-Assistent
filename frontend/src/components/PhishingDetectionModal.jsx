@@ -23,7 +23,7 @@ export default function PhishingDetectionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in select-none">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
       <div className="bg-white dark:bg-[#0E1322] border border-rose-300 dark:border-rose-900/60 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 relative text-left">
         
         {/* Top Header */}

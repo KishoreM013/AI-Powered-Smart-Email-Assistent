@@ -21,7 +21,7 @@ export default function SettingsModal({ isOpen, onClose, user, theme, onToggleTh
   const userEmail = user?.email || "user@gmail.com";
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in select-none">
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
       <div className="bg-white dark:bg-[#0E1322] border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative text-left">
         
         {/* Top Bar Header */}
