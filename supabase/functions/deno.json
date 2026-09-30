@@ -1,0 +1,13 @@
+{
+  "//": "Deno config for the api edge function. Supabase reads this on deploy.",
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
+    "@google/genai": "npm:@google/genai@1",
+    "googleapis": "npm:googleapis@160"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "dom", "esnext"]
+  }
+}

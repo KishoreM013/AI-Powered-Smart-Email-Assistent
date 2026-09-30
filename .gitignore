@@ -5,10 +5,13 @@ venv/
 *.env
 backend/.env
 backend/venv/
+!.env.example
 
 # Dependencies
 node_modules/
 frontend/node_modules/
+functions/node_modules/
+supabase/functions/node_modules/
 dist/
 frontend/dist/
 
@@ -17,12 +20,16 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# --- secrets: .env holds real API keys; only .env.example is committed ---
-.env
-backend/.env
-*.env
-!.env.example
-# --- local data: never commit mail or the SQLite store ---
+# --- secrets: only .env.example files are committed ---
+# Never commit a service account key. Auth is `supabase login`, which stores
+# credentials locally, and the runtime gets the service role key from the
+# platform's own secret store.
+*service-account*.json
+*-service-role*.json
+supabase/.temp/
+supabase/.branches/
+
+# The SQLite store and its WAL sidecars. Never commit: this is real mail.
 backend/data/
 *.db
 *.db-wal
@@ -30,3 +37,12 @@ backend/data/
 
 # local scratch files
 .probe*
+
+# Deno
+.deno/
+
+# Firebase CLI cache from an earlier hosting deploy
+.firebase/
+
+# Compiled output from the superseded Cloud Functions port
+functions/lib/
