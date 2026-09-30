@@ -8,9 +8,17 @@ This application classifies incoming messages, determines action items, extracts
 
 ## Technical Stack
 
-- **Backend:** Python 3.11/3.13, FastAPI, Gmail API, Google Generative AI (Gemini 1.5 Flash), PyPDF (text extractor), Motor (Async MongoDB Driver).
-- **Frontend:** React (Vite SPA template), Tailwind CSS, Framer Motion (micro-animations), Recharts (data visualization), Axios (REST API mappings).
-- **Database:** MongoDB (Local container or MongoDB Atlas Cloud).
+Deployed target is **Supabase**, which is also what Lovable uses natively:
+
+- **Backend:** Supabase Edge Functions (Deno, TypeScript, `Deno.serve`).
+- **Database:** Supabase Postgres, with RLS enabled and no policies so only the
+  service role can read or write.
+- **Frontend:** React (Vite SPA), Tailwind CSS, Framer Motion, Recharts, Axios.
+  Served from any static host: Vercel, Netlify, Cloudflare Pages.
+
+No credit card is required at any point. The previous Python/FastAPI backend is
+still in `backend/` and still runs locally, but it is not part of the deploy
+path. See [docs/DEPLOY_SUPABASE.md](docs/DEPLOY_SUPABASE.md).
 
 ---
 
@@ -30,35 +38,87 @@ This application classifies incoming messages, determines action items, extracts
 
 ```
 smart-email-assistant/
-  ├── backend/
-  │   ├── app/
-  │   │   ├── auth/          # JWT and User profile middleware resolvers
-  │   │   ├── database/      # Motor database client and mock cache fallbacks
-  │   │   ├── models/        # Pydantic schemas (Emails, Notifications, Logs)
-  │   │   ├── routes/        # Router controllers (Auth, Emails, Analytics, Admin)
-  │   │   ├── services/      # Gmail API, Gemini AI connection, OCR extraction
-  │   │   ├── config.py      # Env validations and Demo toggles
-  │   │   └── main.py        # FastAPI orchestrator
-  │   ├── requirements.txt   # Python deps
-  │   └── Dockerfile         # Backend compilation recipe
-  ├── frontend/
-  │   ├── src/
-  │   │   ├── components/    # Layout sidebars and navigation panels
-  │   │   ├── pages/         # Landing, Inbox, Details, Spam, Analytics, Admin
-  │   │   ├── services/      # Axios API endpoint client
-  │   │   ├── App.jsx        # Routing shell and toast notifications toaster
-  │   │   ├── main.jsx       # DOM mounter
-  │   │   └── index.css      # Core Design system class and glass styles
-  │   ├── package.json       # React SPA deps
-  │   ├── tailwind.config.js # Dark mode and colors preferences
-  │   └── Dockerfile         # Frontend deployment build recipe
-  ├── docker-compose.yml     # local Mongo container configurations
-  └── README.md              # Documentation guide
+  ├── supabase/
+  │   ├── migrations/         # Postgres schema + RLS deny-all
+  │   ├── config.toml         # function config (verify_jwt = false)
+  │   └── functions/api/
+  │       ├── index.ts        # Deno.serve + router, all 33 endpoints
+  │       ├── _shared/        # store, auth, crypto, gemini, gmail, ocr, rules
+  │       └── *_test.ts       # 37 tests, run with `deno test`
+  ├── frontend/               # React SPA, served by Vercel/Netlify/Pages
+  ├── backend/                # superseded Python backend, local runs only
+  ├── contract/openapi.json   # frozen HTTP contract from the Python backend
+  └── docs/DEPLOY_SUPABASE.md
 ```
+
+<details>
+<summary>Superseded Python backend (<code>backend/</code>)</summary>
+
+```
+backend/
+  ├── app/
+  │   ├── auth/          # JWT and User profile middleware resolvers
+  │   ├── database/      # in-memory dict store + dead Supabase shim
+  │   ├── models/        # Pydantic schemas
+  │   ├── routes/        # Auth, Emails, Analytics, OCR, Settings
+  │   ├── services/      # Gmail, Gemini, OCR, style learner
+  │   ├── config.py
+  │   └── main.py
+  ├── requirements.txt
+  └── Dockerfile
+```
+
+Not deployed. Kept because it is the reference the port was written against,
+and because it still runs locally for comparison.
+
+</details>
 
 ---
 
-## Quick Start Setup (Without Docker)
+## Quick Start
+
+```bash
+# 1. Install the CLI and sign in (browser, no key needed)
+npm install -g supabase
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
+
+# 2. Create the schema, set secrets, deploy
+supabase db push
+supabase secrets set JWT_SECRET=... CREDENTIAL_ENCRYPTION_KEY=...
+supabase functions deploy api --no-verify-jwt
+
+# 3. Point the frontend at the function
+cd frontend && cp .env.example .env   # fill in the three values
+npm run build
+```
+
+Full steps, including the OAuth redirect URI, are in
+[docs/DEPLOY_SUPABASE.md](docs/DEPLOY_SUPABASE.md).
+
+The app works without a Gemini key: `localRules.ts` covers summarise, classify
+and extract deterministically, so the free tier is genuinely usable.
+
+### Tests
+
+```bash
+cd supabase/functions && deno test --allow-env api/_shared/   # 37 tests
+cd frontend && npm test                                       # 23 tests
+```
+
+### Running the old Python backend
+
+Still works, and is the reference the port was checked against:
+
+```bash
+cd backend
+./venv/bin/python run.py     # API + built UI on http://127.0.0.1:8000
+```
+
+<details>
+<summary>Legacy instructions (Python backend, MongoDB)</summary>
+
+## Legacy Quick Start (Python backend)
 
 ### 1. Configure backend environment
 
@@ -77,20 +137,14 @@ DEMO_MODE=True
 
 ### 2. Run backend FastAPI server
 
-Ensure you have Python 3.11+ installed. Run from `/backend`:
-
 ```bash
 cd backend
-python -m venv venv
-# Windows powershell:
-.\venv\Scripts\Activate.ps1
-# Mac/Linux terminal:
 source venv/bin/activate
-
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
-- API Docs URL: [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger OpenAPI specifications).
+
+- API Docs URL: [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ### 3. Run frontend Vite server
 
@@ -102,8 +156,6 @@ npm install
 npm run dev
 ```
 - Dashboard URL: [http://localhost:5173](http://localhost:5173)
-
----
 
 ## Quick Start Setup (With Docker)
 
@@ -117,3 +169,5 @@ This serves the application globally:
 - Backend REST API: [http://localhost:8000](http://localhost:8000)
 - API OpenAPI Swagger Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Local MongoDB Instance: `mongodb://localhost:27017/`
+
+</details>

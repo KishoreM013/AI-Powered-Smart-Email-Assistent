@@ -1,0 +1,2669 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI-Powered Smart Email Assistant",
+    "description": "AI-Powered Smart Email Assistant REST API with Gemini Generative AI, OCR Document Scanner, and NLP Classification.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/auth/config": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Auth Config",
+        "description": "Returns the Google OAuth configuration status.",
+        "operationId": "get_auth_config_api_auth_config_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login-url": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Login Url",
+        "description": "Get Google OAuth 2.0 authorization URL for real Google sign in.",
+        "operationId": "get_login_url_api_auth_login_url_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/imap-login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Imap Login",
+        "description": "Authenticate and fetch real Gmail emails directly using Google App Password (IMAP SSL).",
+        "operationId": "imap_login_api_auth_imap_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IMAPLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/callback": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Oauth Callback",
+        "description": "Handles Google OAuth callback redirect.",
+        "operationId": "oauth_callback_api_auth_callback_get",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "Error"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout",
+        "description": "Disconnect the account and destroy what the server is holding.\n\nA sign-out that only drops the client-side JWT leaves the OAuth access and\nrefresh token in the store, and a refresh token outlives the session that\ncreated it. Both are revoked here, and Google's grant is dropped as well so\nthe token is not merely forgotten locally but actually invalidated.\n\nThe response is always 200: signing out has to succeed from the caller's\npoint of view even if the upstream revocation fails, otherwise a network\nerror would leave a user stuck in a half-signed-in state.",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Me",
+        "description": "Get authenticated user profile.",
+        "operationId": "get_me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/analyze": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Analyze Pasted Email",
+        "description": "Analyse an email the user pasted, then optionally store it.\n\nThe message does not have to come from a connected mailbox, which is the\npoint: forwarded threads, text copied out of a screenshot and mail from a\nprovider you have not linked all work.",
+        "operationId": "analyze_pasted_email_api_emails_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/history": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Get History",
+        "description": "Everything this account has analysed, newest first.",
+        "operationId": "get_history_api_emails_history_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EmailItem"
+                  },
+                  "type": "array",
+                  "title": "Response Get History Api Emails History Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/history/{email_id}": {
+      "delete": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Delete History Entry",
+        "description": "Remove one analysed email permanently, not to the trash.",
+        "operationId": "delete_history_entry_api_emails_history__email_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/style-profile": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Get Style Profile",
+        "description": "What the app has learned about how this account writes.\n\nReads the same store the reply generator reads, so what the UI shows and\nwhat the draft actually imitates cannot disagree. It used to call a\nget_storage() that does not exist and swallow the ImportError, so this\nendpoint always answered \"nothing learned\" even with a full corpus.\n\nAn empty corpus is reported as ready=False, not as an invented style.",
+        "operationId": "get_style_profile_api_emails_style_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StyleProfile"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/replies/record": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Record Reply",
+        "description": "Record a reply the user actually sent, so style can learn from it.\n\nOnly delivered mail counts. A draft the user never sent is not evidence of\nhow they write.",
+        "operationId": "record_reply_api_emails_replies_record_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/counts": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Get Email Counts",
+        "description": "Return aggregated mailbox counts for sidebar badges and quick stats.",
+        "operationId": "get_email_counts_api_emails_counts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "List Emails",
+        "operationId": "list_emails_api_emails_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "inbox",
+              "title": "Folder"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Unread Only"
+            }
+          },
+          {
+            "name": "starred_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Starred Only"
+            }
+          },
+          {
+            "name": "has_attachments",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Attachments"
+            }
+          },
+          {
+            "name": "tone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tone"
+            }
+          },
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date or epoch seconds, inclusive",
+              "title": "From Date"
+            },
+            "description": "ISO date or epoch seconds, inclusive"
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO date or epoch seconds, inclusive",
+              "title": "To Date"
+            },
+            "description": "ISO date or epoch seconds, inclusive"
+          },
+          {
+            "name": "requires_reply",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Requires Reply"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EmailItem"
+                  },
+                  "title": "Response List Emails Api Emails Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Get Email",
+        "description": "Fetch details of a specific email.",
+        "operationId": "get_email_api_emails__email_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Delete Email",
+        "description": "Move email to trash or permanently remove if already in trash.",
+        "operationId": "delete_email_api_emails__email_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/sync": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Sync Emails",
+        "description": "Trigger email sync pipeline and AI categorization.",
+        "operationId": "sync_emails_api_emails_sync_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/sync-imap": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Sync Imap Emails",
+        "description": "Directly fetch real emails from Gmail IMAP using App Password.",
+        "operationId": "sync_imap_emails_api_emails_sync_imap_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_password",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "App Password"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}/toggle-read": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Toggle Read",
+        "description": "Toggle read/unread status.",
+        "operationId": "toggle_read_api_emails__email_id__toggle_read_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}/toggle-star": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Toggle Star",
+        "description": "Toggle starred status.",
+        "operationId": "toggle_star_api_emails__email_id__toggle_star_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}/action-items/{task_idx}/toggle": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Toggle Action Item",
+        "description": "Mark an action item task as completed or pending.",
+        "operationId": "toggle_action_item_api_emails__email_id__action_items__task_idx__toggle_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          },
+          {
+            "name": "task_idx",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Task Idx"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/generate-reply": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Generate Reply",
+        "description": "Generate smart AI email reply with selected tone.",
+        "operationId": "generate_reply_api_emails_generate_reply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateReplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/summarize": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Summarize Email Text",
+        "description": "Summarize any email text payload using AI.",
+        "operationId": "summarize_email_text_api_emails_summarize_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subject"
+            }
+          },
+          {
+            "name": "body",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Body"
+            }
+          },
+          {
+            "name": "sender",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "Unknown",
+              "title": "Sender"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/compose": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Compose Email",
+        "description": "Send / save composed outgoing email.",
+        "operationId": "compose_email_api_emails_compose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComposeEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/emails/{email_id}/phishing-check": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Phishing Check",
+        "description": "Assess one message for phishing.\n\nThe UI calls this for every message it opens, so a failure here is\nreported rather than raised: a phishing verdict is an enhancement, and it\nmust not be able to break the reading pane.",
+        "operationId": "phishing_check_api_emails__email_id__phishing_check_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Language"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}/suggest-reply": {
+      "get": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Suggest Reply",
+        "description": "Draft a reply for an existing thread.\n\n``tone`` is optional: when it is not supplied the draft mirrors the\nregister of the incoming message rather than defaulting to Professional.",
+        "operationId": "suggest_reply_api_emails__email_id__suggest_reply_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          },
+          {
+            "name": "tone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tone"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Language"
+            }
+          },
+          {
+            "name": "personalize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Personalize"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}/restore": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Restore Email",
+        "description": "Return a trashed or spam message to the inbox.",
+        "operationId": "restore_email_api_emails__email_id__restore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/emails/{email_id}/move": {
+      "post": {
+        "tags": [
+          "Emails"
+        ],
+        "summary": "Move Email",
+        "description": "Move a message between folders. Virtual folders are not destinations.",
+        "operationId": "move_email_api_emails__email_id__move_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email Id"
+            }
+          },
+          {
+            "name": "folder",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "inbox",
+              "title": "Folder"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ocr/upload": {
+      "post": {
+        "tags": [
+          "OCR Scanner"
+        ],
+        "summary": "Scan Uploaded File",
+        "description": "Upload a PDF file and extract text and structured document insights.",
+        "operationId": "scan_uploaded_file_api_ocr_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_scan_uploaded_file_api_ocr_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OCRScanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/ocr/scan-attachment": {
+      "post": {
+        "tags": [
+          "OCR Scanner"
+        ],
+        "summary": "Scan Email Attachment",
+        "description": "Scan and analyze an attachment from an existing email in inbox.",
+        "operationId": "scan_email_attachment_api_ocr_scan_attachment_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OCRScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OCRScanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/analytics/summary": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Analytics Summary",
+        "description": "Retrieve full inbox metrics, category distributions, priority breakdowns, and volume trends.",
+        "operationId": "get_analytics_summary_api_analytics_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsSummary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get Settings",
+        "description": "Get current application preferences and API keys status.",
+        "operationId": "get_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update Settings",
+        "description": "Update application settings.",
+        "operationId": "update_settings_api_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Liveness plus configuration *status*, never configuration values.\n\nBooleans only. Knowing whether a credential is present is enough to\ndiagnose a misconfigured deployment; knowing the credential is not.",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActionItem": {
+        "properties": {
+          "task": {
+            "type": "string",
+            "title": "Task"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "completed": {
+            "type": "boolean",
+            "title": "Completed",
+            "default": false
+          },
+          "is_meeting": {
+            "type": "boolean",
+            "title": "Is Meeting",
+            "default": false
+          },
+          "meeting_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "title": "ActionItem"
+      },
+      "AnalyticsSummary": {
+        "properties": {
+          "total_emails": {
+            "type": "integer",
+            "title": "Total Emails"
+          },
+          "unread_count": {
+            "type": "integer",
+            "title": "Unread Count"
+          },
+          "spam_blocked": {
+            "type": "integer",
+            "title": "Spam Blocked"
+          },
+          "urgent_count": {
+            "type": "integer",
+            "title": "Urgent Count"
+          },
+          "time_saved_hours": {
+            "type": "number",
+            "title": "Time Saved Hours"
+          },
+          "avg_response_time_minutes": {
+            "type": "integer",
+            "title": "Avg Response Time Minutes"
+          },
+          "category_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Category Distribution"
+          },
+          "priority_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Priority Distribution"
+          },
+          "daily_volume": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Daily Volume"
+          },
+          "top_senders": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Top Senders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_emails",
+          "unread_count",
+          "spam_blocked",
+          "urgent_count",
+          "time_saved_hours",
+          "avg_response_time_minutes",
+          "category_distribution",
+          "priority_distribution",
+          "daily_volume",
+          "top_senders"
+        ],
+        "title": "AnalyticsSummary"
+      },
+      "AnalyzeRequest": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "default": ""
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "sender_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender Name"
+          },
+          "sender_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sender Email"
+          },
+          "save": {
+            "type": "boolean",
+            "title": "Save",
+            "default": true
+          },
+          "generate_reply": {
+            "type": "boolean",
+            "title": "Generate Reply",
+            "default": false
+          },
+          "tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tone"
+          },
+          "personalize": {
+            "type": "boolean",
+            "title": "Personalize",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "title": "AnalyzeRequest",
+        "description": "An arbitrary email supplied by the user, not necessarily from a mailbox."
+      },
+      "AttachmentInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "size": {
+            "type": "string",
+            "title": "Size"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "extracted_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "size",
+          "content_type"
+        ],
+        "title": "AttachmentInfo"
+      },
+      "AuthConfigResponse": {
+        "properties": {
+          "google_client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Client Id",
+            "default": ""
+          },
+          "google_redirect_uri": {
+            "type": "string",
+            "title": "Google Redirect Uri",
+            "default": ""
+          },
+          "is_live_configured": {
+            "type": "boolean",
+            "title": "Is Live Configured",
+            "default": false
+          },
+          "demo_mode": {
+            "type": "boolean",
+            "title": "Demo Mode",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AuthConfigResponse"
+      },
+      "Body_scan_uploaded_file_api_ocr_upload_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_scan_uploaded_file_api_ocr_upload_post"
+      },
+      "CategoryEnum": {
+        "type": "string",
+        "enum": [
+          "Work",
+          "Personal",
+          "Promotions",
+          "Finance",
+          "Updates",
+          "Newsletter",
+          "Important",
+          "Meeting",
+          "Invitation",
+          "Spam",
+          "Other"
+        ],
+        "title": "CategoryEnum"
+      },
+      "ComposeEmailRequest": {
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "title": "Recipient"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "in_reply_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In Reply To"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CategoryEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "Work"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriorityEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "Medium"
+          },
+          "attachments": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recipient",
+          "subject",
+          "body"
+        ],
+        "title": "ComposeEmailRequest"
+      },
+      "EmailItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "user_email": {
+            "type": "string",
+            "title": "User Email",
+            "default": ""
+          },
+          "sender_name": {
+            "type": "string",
+            "title": "Sender Name"
+          },
+          "sender_email": {
+            "type": "string",
+            "title": "Sender Email"
+          },
+          "recipient_email": {
+            "type": "string",
+            "title": "Recipient Email",
+            "default": "user@example.com"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "snippet": {
+            "type": "string",
+            "title": "Snippet"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "category": {
+            "$ref": "#/components/schemas/CategoryEnum",
+            "default": "Work"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/PriorityEnum",
+            "default": "Medium"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "timestamp": {
+            "type": "number",
+            "title": "Timestamp"
+          },
+          "is_read": {
+            "type": "boolean",
+            "title": "Is Read",
+            "default": false
+          },
+          "is_starred": {
+            "type": "boolean",
+            "title": "Is Starred",
+            "default": false
+          },
+          "is_spam": {
+            "type": "boolean",
+            "title": "Is Spam",
+            "default": false
+          },
+          "is_trash": {
+            "type": "boolean",
+            "title": "Is Trash",
+            "default": false
+          },
+          "has_attachments": {
+            "type": "boolean",
+            "title": "Has Attachments",
+            "default": false
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentInfo"
+            },
+            "type": "array",
+            "title": "Attachments"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "action_items": {
+            "items": {
+              "$ref": "#/components/schemas/ActionItem"
+            },
+            "type": "array",
+            "title": "Action Items"
+          },
+          "reply_draft": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply Draft"
+          },
+          "folder": {
+            "type": "string",
+            "title": "Folder",
+            "default": "inbox"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "sender_name",
+          "sender_email",
+          "subject",
+          "snippet",
+          "body",
+          "date",
+          "timestamp"
+        ],
+        "title": "EmailItem"
+      },
+      "EmailSummary": {
+        "properties": {
+          "bullet_points": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Bullet Points"
+          },
+          "one_liner": {
+            "type": "string",
+            "title": "One Liner",
+            "default": ""
+          },
+          "urgency_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Urgency Reason"
+          },
+          "sentiment": {
+            "type": "string",
+            "title": "Sentiment",
+            "default": "Neutral"
+          },
+          "tone": {
+            "type": "string",
+            "title": "Tone",
+            "default": "Neutral"
+          },
+          "key_deadlines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Key Deadlines"
+          },
+          "dates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dates"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            },
+            "type": "array",
+            "title": "People"
+          },
+          "meeting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeetingDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keywords"
+          },
+          "requires_reply": {
+            "type": "boolean",
+            "title": "Requires Reply",
+            "default": false
+          },
+          "importance_score": {
+            "type": "number",
+            "title": "Importance Score",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "title": "EmailSummary"
+      },
+      "GenerateReplyRequest": {
+        "properties": {
+          "email_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Id"
+          },
+          "email_subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Subject"
+          },
+          "email_body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Body"
+          },
+          "tone": {
+            "type": "string",
+            "title": "Tone",
+            "default": "Professional"
+          },
+          "custom_instructions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Instructions"
+          }
+        },
+        "type": "object",
+        "title": "GenerateReplyRequest"
+      },
+      "GenerateReplyResponse": {
+        "properties": {
+          "reply_text": {
+            "type": "string",
+            "title": "Reply Text"
+          },
+          "tone": {
+            "type": "string",
+            "title": "Tone"
+          },
+          "suggested_subject": {
+            "type": "string",
+            "title": "Suggested Subject"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reply_text",
+          "tone",
+          "suggested_subject"
+        ],
+        "title": "GenerateReplyResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IMAPLoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "app_password": {
+            "type": "string",
+            "title": "App Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "app_password"
+        ],
+        "title": "IMAPLoginRequest"
+      },
+      "MeetingDetails": {
+        "properties": {
+          "is_meeting": {
+            "type": "boolean",
+            "title": "Is Meeting",
+            "default": false
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "attendees": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Attendees"
+          }
+        },
+        "type": "object",
+        "title": "MeetingDetails",
+        "description": "Structured schedule information pulled out of the body."
+      },
+      "OCRScanRequest": {
+        "properties": {
+          "email_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Id"
+          },
+          "attachment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Text"
+          }
+        },
+        "type": "object",
+        "title": "OCRScanRequest"
+      },
+      "OCRScanResponse": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "extracted_text": {
+            "type": "string",
+            "title": "Extracted Text"
+          },
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "key_entities": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Key Entities"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "extracted_text",
+          "document_type",
+          "summary"
+        ],
+        "title": "OCRScanResponse"
+      },
+      "Person": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "Person",
+        "description": "A named person mentioned in the message."
+      },
+      "PriorityEnum": {
+        "type": "string",
+        "enum": [
+          "High",
+          "Medium",
+          "Low"
+        ],
+        "title": "PriorityEnum"
+      },
+      "SettingsUpdateRequest": {
+        "properties": {
+          "gemini_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gemini Api Key"
+          },
+          "demo_mode": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demo Mode"
+          },
+          "auto_reply_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Reply Enabled"
+          },
+          "default_reply_tone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Reply Tone"
+          }
+        },
+        "type": "object",
+        "title": "SettingsUpdateRequest"
+      },
+      "StyleProfile": {
+        "properties": {
+          "reply_count": {
+            "type": "integer",
+            "title": "Reply Count",
+            "default": 0
+          },
+          "average_words": {
+            "type": "number",
+            "title": "Average Words",
+            "default": 0.0
+          },
+          "average_sentence_length": {
+            "type": "number",
+            "title": "Average Sentence Length",
+            "default": 0.0
+          },
+          "formality": {
+            "type": "number",
+            "title": "Formality",
+            "default": 0.5
+          },
+          "greeting": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Greeting"
+          },
+          "sign_off": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sign Off"
+          },
+          "uses_emoji": {
+            "type": "boolean",
+            "title": "Uses Emoji",
+            "default": false
+          },
+          "uses_bullets": {
+            "type": "boolean",
+            "title": "Uses Bullets",
+            "default": false
+          },
+          "common_phrases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Common Phrases"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language",
+            "default": "en"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "StyleProfile",
+        "description": "What the app has learned about how an account writes.\n\nDeliberately descriptive rather than a mock: an empty corpus yields\nready=False, and the caller is expected to say so."
+      },
+      "Token": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserProfile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "user"
+        ],
+        "title": "Token"
+      },
+      "UserProfile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "avatar": {
+            "type": "string",
+            "title": "Avatar"
+          },
+          "is_demo": {
+            "type": "boolean",
+            "title": "Is Demo",
+            "default": true
+          },
+          "connected_gmail": {
+            "type": "boolean",
+            "title": "Connected Gmail",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "name",
+          "avatar"
+        ],
+        "title": "UserProfile"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
