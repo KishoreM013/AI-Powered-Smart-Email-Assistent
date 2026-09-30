@@ -1,12 +1,16 @@
+import os
 import base64
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from app.config import settings
+from app.models.email import EmailItem, AttachmentInfo, AISummary
+
 logger = logging.getLogger("smart_email_assistant")
+
 def get_gmail_service(credentials_dict: Dict[str, Any]):
     """Creates a Gmail API service instance."""
     try:
@@ -25,6 +29,7 @@ def get_gmail_service(credentials_dict: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Failed to create Gmail service: {e}")
         return None
+
 async def fetch_emails_from_gmail(user_email: str, credentials_dict: Dict[str, Any], max_results: int = 20) -> List[Dict[str, Any]]:
     """Fetches list of emails from Gmail API and parses them."""
     service = get_gmail_service(credentials_dict)
@@ -51,6 +56,7 @@ async def fetch_emails_from_gmail(user_email: str, credentials_dict: Dict[str, A
     except Exception as e:
         logger.error(f"General error fetching Gmail: {e}")
         return []
+
 def parse_gmail_message(msg_data: Dict[str, Any], user_email: str) -> Optional[Dict[str, Any]]:
     """Helper to parse raw Gmail API response structure."""
     try:
@@ -129,6 +135,7 @@ def parse_gmail_message(msg_data: Dict[str, Any], user_email: str) -> Optional[D
     except Exception as e:
         logger.error(f"Error parsing message: {e}")
         return None
+
 async def send_gmail_reply(credentials_dict: Dict[str, Any], thread_id: str, to: str, subject: str, body: str):
     """Sends a reply to a thread using real Gmail API."""
     service = get_gmail_service(credentials_dict)
@@ -152,6 +159,7 @@ async def send_gmail_reply(credentials_dict: Dict[str, Any], thread_id: str, to:
     except Exception as e:
         logger.error(f"Gmail reply failed: {e}")
         raise e
+
 def generate_mock_emails(user_email: str) -> List[Dict[str, Any]]:
     """No simulated emails for live production use."""
     return []

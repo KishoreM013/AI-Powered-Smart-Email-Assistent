@@ -1,33 +1,40 @@
-from app.services.model_registry import build_model
+import os
 import json
 import re
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
+from app.models.schemas import EmailSummary, ActionItem, CategoryEnum, PriorityEnum
 from app.config import settings
+
 try:
     import google.generativeai as genai
     HAS_GENAI = True
 except ImportError:
     HAS_GENAI = False
+
 class GeminiAIService:
     def __init__(self):
         self.api_key = settings.GEMINI_API_KEY
         self.model = None
         self._init_model()
+
     def _init_model(self):
         if HAS_GENAI and self.api_key and len(self.api_key.strip()) > 5:
             try:
                 genai.configure(api_key=self.api_key.strip())
-                self.model = build_model()
+                self.model = genai.GenerativeModel("gemini-1.5-flash")
             except Exception as e:
                 print(f"[GeminiAIService] Error initializing Gemini API: {e}")
                 self.model = None
+
     def update_api_key(self, new_key: str):
         self.api_key = new_key
         self._init_model()
+
     def _sync_generate_analysis(self, prompt: str) -> str:
         response = self.model.generate_content(prompt)
         return response.text
+
     async def analyze_and_summarize_email(self, subject: str, body: str, sender: str = "") -> Dict[str, Any]:
         """Analyzes an email to extract summary, action items, category, priority, and sentiment with max 2.5s latency."""
         if self.model and self.api_key and not self.api_key.startswith("mock") and len(self.api_key.strip()) > 15:
@@ -45,6 +52,7 @@ class GeminiAIService:
     {{"task": "specific task description", "due_date": "date or null", "is_meeting": false, "meeting_time": "time or null"}}
   ]
 }}
+
 Sender: {sender}
 Subject: {subject}
 Body:
@@ -60,8 +68,11 @@ Body:
                 return parsed
             except Exception as ex:
                 print(f"[GeminiAIService] Gemini API call timeout/fallback to smart fast NLP: {ex}")
+
         # Intelligent High-Speed NLP Engine (<2ms response)
         return self._nlp_rule_engine(subject, body, sender)
+
+
     def _nlp_rule_engine(self, subject: str, body: str, sender: str) -> Dict[str, Any]:
         text = f"{subject} {body}".lower()
         
@@ -81,6 +92,7 @@ Body:
                 "deadlines": [],
                 "action_items": []
             }
+
         # 2. Determine Category
         category = "Work"
         if any(k in text for k in ["invoice", "receipt", "billing", "payment", "subscription", "$", "usd", "eur"]):
@@ -93,6 +105,7 @@ Body:
             category = "Promotions"
         elif any(k in text for k in ["family", "mom", "dad", "weekend", "dinner", "vacation"]):
             category = "Personal"
+
         # 3. Determine Priority & Deadlines
         priority = "Medium"
         urgency_reason = "Standard inbox communication."
@@ -107,6 +120,7 @@ Body:
             priority = "Low"
             urgency_reason = "Informational update or newsletter."
             sentiment = "Positive"
+
         # 4. Extract action items & deadlines
         action_items = []
         deadlines = []
@@ -115,6 +129,7 @@ Body:
         time_matches = re.findall(r"(by\s+[A-Za-z]+\s+\d+(?::\d+)?\s*(?:am|pm|est|pst|ist)?|on\s+[A-Za-z]+\s+at\s+\d+(?::\d+)?\s*(?:am|pm)?|before\s+[A-Za-z]+)", text)
         for tm in time_matches[:3]:
             deadlines.append(tm.capitalize())
+
         lines = [l.strip() for l in body.split("\n") if l.strip() and len(l.strip()) > 10]
         for line in lines:
             if any(verb in line.lower() for verb in ["please review", "let me know", "sign", "verify", "sync", "attend", "confirm", "complete"]):
@@ -130,6 +145,7 @@ Body:
                 })
                 if len(action_items) >= 3:
                     break
+
         # If no explicit action items found, synthesize one
         if not action_items and priority == "High":
             action_items.append({
@@ -138,6 +154,7 @@ Body:
                 "is_meeting": False,
                 "meeting_time": None
             })
+
         # Generate bullet points
         bullets = []
         if lines:
@@ -148,7 +165,9 @@ Body:
             bullets.append(lines[2])
         if not bullets:
             bullets = [subject]
+
         one_liner = f"{subject} - {bullets[0][:80]}..."
+
         return {
             "category": category,
             "priority": priority,
@@ -159,6 +178,7 @@ Body:
             "deadlines": deadlines,
             "action_items": action_items
         }
+
     async def generate_smart_reply(
         self,
         subject: str,
@@ -178,7 +198,9 @@ Sender: {sender_name}
 Subject: {subject}
 Received Email Body:
 {body}
+
 Additional user instruction: {custom_instructions or 'None'}
+
 Rules:
 - Write in a natural, polished human manner.
 - Be concise and actionable.
@@ -196,48 +218,76 @@ Rules:
                 }
             except Exception as e:
                 print(f"[GeminiAIService] Gemini reply timeout/error fallback to template: {e}")
+
+
         # Intelligent Tone-based Template Engine
         salutation = f"Hi {sender_name.split()[0]}," if sender_name else "Hi,"
         suggested_subject = f"Re: {subject.replace('Re: ', '')}"
         
         custom_clause = f"\n\nRegarding your note: {custom_instructions}" if custom_instructions else ""
+
         if tone.lower() == "friendly":
             reply_text = f"""{salutation}
+
 Thanks so much for reaching out and sharing this update!
+
 I've gone through the details and everything looks great on my end. I will make sure we stay aligned on these points and keep you posted on our progress.{custom_clause}
+
 Let's catch up soon if anything else pops up!
+
 Best regards,
 {my_name}"""
+
         elif tone.lower() == "direct" or tone.lower() == "formal":
             reply_text = f"""{salutation}
+
 I have received your message regarding '{subject}'.
+
 I have reviewed the requirements and confirmed the timeline. All scheduled checkpoints and deliverables are currently on track.{custom_clause}
+
 I will share the finalized update as soon as the next phase completes.
+
 Sincerely,
 {my_name}"""
+
         elif "decline" in tone.lower():
             reply_text = f"""{salutation}
+
 Thank you for the invitation and for thinking of me regarding this initiative.
+
 Unfortunately, due to current high-priority commitments and upcoming deployment schedules, I will not be able to take this on at this time.{custom_clause}
+
 I appreciate your understanding and hope we can collaborate on future cycles.
+
 Warm regards,
 {my_name}"""
+
         elif "urgent" in tone.lower():
             reply_text = f"""{salutation}
+
 Acknowledged with highest priority.
+
 I am immediately looking into this and verifying the staging/production parameters right now. I will provide a status report within the next 30 minutes.{custom_clause}
+
 Thanks,
 {my_name}"""
+
         else: # Default Professional
             reply_text = f"""{salutation}
+
 Thank you for sending over this information.
+
 I have reviewed the email details and action items. Everything is clear, and I am proceeding with the necessary preparations according to the discussed schedule.{custom_clause}
+
 Please let me know if you need any additional documentation or sign-offs.
+
 Best regards,
 {my_name}"""
+
         return {
             "reply_text": reply_text.strip(),
             "tone": tone,
             "suggested_subject": suggested_subject
         }
+
 gemini_service = GeminiAIService()

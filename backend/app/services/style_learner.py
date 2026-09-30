@@ -58,14 +58,10 @@ class StyleLearner:
         self._user = user_email
 
     # -------------------------------------------------------------- building
-    def _bodies(self) -> List[str]:
-        """The user's sent reply bodies, newest first."""
-        replies = self._storage.list_sent_replies(self._user, limit=200)
-        return [r["body"] for r in replies if (r.get("body") or "").strip()]
-
     def build_profile(self) -> StyleProfile:
         """Compute a style profile from the user's sent replies."""
-        bodies = self._bodies()
+        replies = self._storage.list_replies(self._user, limit=200)
+        bodies = [r["body"] for r in replies if (r.get("body") or "").strip()]
 
         if not bodies:
             return StyleProfile()
@@ -163,9 +159,11 @@ class StyleLearner:
         Very long or very short samples skew the model, so the median-ish
         middle of the corpus is preferred.
         """
+        replies = self._storage.list_replies(self._user, limit=200)
         bodies = [
-            b.strip() for b in self._bodies()
-            if 20 <= len(b.strip()) <= 1200
+            (r.get("body") or "").strip()
+            for r in replies
+            if 20 <= len((r.get("body") or "").strip()) <= 1200
         ]
         if not bodies:
             return []

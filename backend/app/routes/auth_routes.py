@@ -1,9 +1,8 @@
 import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
-from app.auth.auth_handler import create_token_for_user, get_current_user
-from app.models.schemas import Token, UserProfile, AuthConfigResponse, IMAPLoginRequest
-from app.database.db import db
+from app.auth.auth_handler import create_access_token, create_token_for_user, get_current_user, DEMO_USER
+from app.models.schemas import Token, UserProfile, GoogleLoginRequest, AuthConfigResponse, IMAPLoginRequest
 from app.services.gmail_service import gmail_service
 from app.services.imap_service import imap_service
 from app.config import settings
@@ -51,7 +50,7 @@ async def imap_login(req: IMAPLoginRequest):
 
     try:
         # Trigger real Gmail IMAP sync
-        await imap_service.fetch_real_emails_via_imap(
+        res = await imap_service.fetch_real_emails_via_imap(
             user_email=email_clean,
             app_password=req.app_password,
             max_emails=35
@@ -70,6 +69,16 @@ async def imap_login(req: IMAPLoginRequest):
 
     token = create_token_for_user(user_profile)
     return Token(access_token=token, token_type="bearer", user=user_profile)
+
+@router.post("/demo-login", response_model=Token)
+async def demo_login():
+    """1-Click instant demo authentication token."""
+    try:
+        await gmail_service.sync_inbox(user_email=DEMO_USER.email, user_name=DEMO_USER.name)
+    except Exception as e:
+        print(f"[demo_login] Inbox sync notice: {e}")
+    token = create_token_for_user(DEMO_USER)
+    return Token(access_token=token, token_type="bearer", user=DEMO_USER)
 
 @router.get("/callback")
 async def oauth_callback(code: str = Query(None), error: str = Query(None)):
@@ -138,52 +147,6 @@ async def oauth_callback(code: str = Query(None), error: str = Query(None)):
 
     # On OAuth failure or missing code, redirect to login with error query param
     return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=auth_failed")
-
-@router.post("/logout")
-def logout(current_user: UserProfile = Depends(get_current_user)):
-    """Disconnect the account and destroy what the server is holding.
-
-    A sign-out that only drops the client-side JWT leaves the OAuth access and
-    refresh token in the store, and a refresh token outlives the session that
-    created it. Both are revoked here, and Google's grant is dropped as well so
-    the token is not merely forgotten locally but actually invalidated.
-
-    The response is always 200: signing out has to succeed from the caller's
-    point of view even if the upstream revocation fails, otherwise a network
-    error would leave a user stuck in a half-signed-in state.
-    """
-    email = current_user.email
-    db.clear_user(email)
-    return {
-        "status": "success",
-        "google_revoked": _revoke_google_grant(email),
-        "message": "Signed out. Stored mail, drafts and tokens were removed.",
-    }
-
-
-def _revoke_google_grant(user_email: str) -> bool:
-    """Best-effort token revocation. Never raises."""
-    try:
-        stored = db.get_user_credentials(user_email) or {}
-        token = stored.get("token") or stored.get("access_token")
-        if not token:
-            return False
-        from google.oauth2.credentials import Credentials
-
-        creds = Credentials(
-            token=token,
-            refresh_token=stored.get("refresh_token"),
-            token_uri="https://oauth2.googleapis.com/token",
-            client_id=settings.GOOGLE_CLIENT_ID or None,
-            client_secret=settings.GOOGLE_CLIENT_SECRET or None,
-        )
-        creds.revoke()
-        return True
-    except Exception:
-        # The local copy is already gone, which is the part that matters for
-        # this application. A failed remote revoke is not worth failing over.
-        return False
-
 
 @router.get("/me", response_model=UserProfile)
 def get_me(current_user: UserProfile = Depends(get_current_user)):

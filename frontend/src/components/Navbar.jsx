@@ -1,16 +1,9 @@
 import React, { useState } from 'react';
 import {
-  Search, RefreshCw, Plus, Sparkles, Mail, Sun, Moon, Mic, Globe, LogOut, X,
+  Search, RefreshCw, Plus, Bell, Sparkles, AlertCircle,
+  Sliders, ShieldCheck, Mail, LogOut, Sun, Moon, Mic, Globe
 } from 'lucide-react';
 
-/**
- * Top bar.
- *
- * Presentation only: every handler, prop and piece of state below is exactly
- * what the previous version had. What changed is the arrangement. Search gets
- * the room it deserves, Compose is the one filled button, and everything else
- * collapses into a quiet icon group so the bar reads as a single line.
- */
 export default function Navbar({
   searchQuery,
   setSearchQuery,
@@ -18,176 +11,128 @@ export default function Navbar({
   isSyncing,
   onOpenCompose,
   onOpenSettings,
-  unreadCount = 0,
-  urgentCount = 0,
+  unreadCount = 12,
+  urgentCount = 5,
   user,
   onLogout,
   theme,
   onToggleTheme,
   language = 'en',
   onToggleLanguage,
-  onOpenVoiceCommand,
+  onOpenVoiceCommand
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const userName = user?.name || (user?.email ? user.email.split('@')[0] : 'User');
-  const avatar =
-    user?.avatar || user?.picture ||
-    `https://api.dicebear.com/7.x/bottts/svg?seed=${user?.email || 'User'}`;
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
+  const userName = user?.name || (user?.email ? user.email.split('@')[0] : "User");
 
   return (
-    <header className="sticky top-0 z-30 h-16 surface line border-b">
-      <div className="h-full px-4 lg:px-6 flex items-center gap-4">
-        {/* Brand */}
-        <div className="flex items-center gap-2.5 shrink-0 w-auto lg:w-56">
-          <div className="w-9 h-9 rounded-xl accent-bg text-white grid place-items-center">
-            <Mail className="w-[18px] h-[18px]" />
-          </div>
-          <span className="hidden sm:block text-[15px] font-semibold tracking-tight ink truncate">
-            Smart Inbox
+    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0C101B] px-4 lg:px-6 flex items-center justify-between z-30 sticky top-0 transition-colors select-none">
+      
+      {/* Brand & Logo */}
+      <div className="flex items-center space-x-3 w-64">
+        <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-600/30">
+          <Mail className="w-5 h-5" />
+        </div>
+        <div>
+          <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white block">
+            AI Email Assistant
           </span>
         </div>
+      </div>
 
-        {/* Search takes the remaining room */}
-        <div className="flex-1 min-w-0 max-w-2xl mx-auto relative">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ink-soft pointer-events-none" />
+      {/* Center Search Input */}
+      <div className="flex-1 max-w-xl mx-4 hidden md:flex items-center">
+        <div className="relative w-full">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by sender, subject or keyword"
-            aria-label="Search emails"
-            className="w-full pl-10 pr-9 py-2.5 rounded-xl text-sm transition"
-            style={{
-              background: 'rgba(100,116,139,0.07)',
-              border: '1px solid transparent',
-              color: 'var(--ink)',
-            }}
-            onFocus={(e) => {
-              e.target.style.background = 'var(--surface)';
-              e.target.style.borderColor = 'var(--accent)';
-              e.target.style.boxShadow = '0 0 0 3px rgba(99,102,241,0.14)';
-            }}
-            onBlur={(e) => {
-              e.target.style.background = 'rgba(100,116,139,0.07)';
-              e.target.style.borderColor = 'transparent';
-              e.target.style.boxShadow = 'none';
-            }}
+            placeholder="Search emails by sender, subject, keywords..."
+            className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-10 pr-4 py-2 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-medium"
           />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 btn-icon !w-6 !h-6"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
+        </div>
+      </div>
+
+      {/* Right Controls Bar */}
+      <div className="flex items-center space-x-2 sm:space-x-3">
+        {/* Voice Command Shortcut Button */}
+        <button
+          onClick={onOpenVoiceCommand}
+          className="p-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition shadow-2xs flex items-center space-x-1 text-xs font-semibold"
+          title="Voice AI Command Assistant"
+        >
+          <Mic className="w-4 h-4" />
+          <span className="hidden xl:inline">Voice Assistant</span>
+        </button>
+
+        {/* Sync Inbox Button */}
+        <button
+          onClick={onSync}
+          disabled={isSyncing}
+          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white transition shadow-2xs flex items-center space-x-1.5 text-xs font-semibold"
+          title="Sync Emails with AI Categorizer"
+        >
+          <RefreshCw className={`w-4 h-4 text-indigo-600 dark:text-indigo-400 ${isSyncing ? 'animate-spin' : ''}`} />
+          <span className="hidden sm:inline">Sync</span>
+        </button>
+
+        {/* Compose Button */}
+        <button
+          onClick={onOpenCompose}
+          className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-md shadow-indigo-600/20"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">Compose</span>
+        </button>
+
+        {/* Language Toggle Button */}
+        <button
+          onClick={onToggleLanguage}
+          className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-xs font-extrabold hover:border-indigo-500 transition"
+          title="Toggle Language (English / Tamil)"
+        >
+          {language === 'en' ? 'EN' : 'TA'}
+        </button>
+
+        {/* Theme Toggle Button */}
+        <button
+          onClick={onToggleTheme}
+          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white transition shadow-2xs"
+          title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+        </button>
+
+        {/* Notification Bell Badge */}
+        <div className="relative">
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-white transition relative shadow-2xs"
+          >
+            <Bell className="w-4 h-4" />
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-[10px] font-bold text-white rounded-full flex items-center justify-center">
+              5
+            </span>
+          </button>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* User Profile Pill matching diagram "User Name v" */}
+        <div className="relative">
           <button
-            onClick={onSync}
-            disabled={isSyncing}
-            title="Sync now"
-            aria-label="Sync now"
-            className="btn-icon"
+            onClick={onOpenSettings}
+            className="flex items-center space-x-2.5 p-1 pl-2 pr-3 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
-            <RefreshCw className={`w-[18px] h-[18px] accent-text ${isSyncing ? 'spin' : ''}`} />
+            <img
+              src={user?.avatar || user?.picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${user?.email || 'User'}`}
+              alt="Avatar"
+              className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-950 p-0.5 border border-indigo-300 dark:border-indigo-700"
+            />
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-100 hidden sm:inline">
+              {userName}
+            </span>
           </button>
-
-          <button
-            onClick={onOpenVoiceCommand}
-            title="Voice command"
-            aria-label="Voice command"
-            className="btn-icon hidden sm:inline-flex"
-          >
-            <Mic className="w-[18px] h-[18px]" />
-          </button>
-
-          <button
-            onClick={onToggleLanguage}
-            title="Language"
-            aria-label="Toggle language"
-            className="btn-icon !w-auto !px-2.5 text-[11px] font-bold"
-          >
-            {language === 'en' ? 'EN' : 'தமிழ்'}
-          </button>
-
-          <button
-            onClick={onToggleTheme}
-            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            aria-label="Toggle theme"
-            className="btn-icon"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-[18px] h-[18px] text-amber-400" />
-            ) : (
-              <Moon className="w-[18px] h-[18px]" />
-            )}
-          </button>
-
-          <div className="w-px h-6 mx-1.5 line border" aria-hidden="true" />
-
-          <button onClick={onOpenCompose} className="btn-primary">
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Compose</span>
-          </button>
-
-          {/* Account */}
-          <div className="relative ml-1">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="flex items-center gap-2 pl-1 pr-1.5 py-1 rounded-xl hover:bg-slate-500/10 transition"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-            >
-              <img
-                src={avatar}
-                alt=""
-                className="w-8 h-8 rounded-full accent-soft-bg"
-              />
-              <span className="hidden lg:inline text-xs font-semibold ink-soft max-w-24 truncate">
-                {userName}
-              </span>
-            </button>
-
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                <div
-                  role="menu"
-                  className="absolute right-0 mt-2 w-56 panel shadow-xl overflow-hidden z-20 animate-in"
-                >
-                  <div className="px-4 py-3 border-b line">
-                    <p className="text-sm font-semibold ink truncate">{userName}</p>
-                    <p className="text-[11px] ink-soft truncate">{user?.email}</p>
-                  </div>
-                  <div className="p-1.5 space-y-0.5">
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        onOpenSettings?.();
-                      }}
-                      className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-500/10 transition"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Settings
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={onLogout}
-                      className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition"
-                    >
-                      <LogOut className="w-3.5 h-3.5" />
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
         </div>
       </div>
     </header>

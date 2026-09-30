@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 from enum import Enum
 
 class PriorityEnum(str, Enum):
@@ -9,28 +10,12 @@ class PriorityEnum(str, Enum):
 
 class CategoryEnum(str, Enum):
     WORK = "Work"
+    FINANCE = "Finance"
     PERSONAL = "Personal"
     PROMOTIONS = "Promotions"
-    FINANCE = "Finance"
     UPDATES = "Updates"
     NEWSLETTER = "Newsletter"
-    # Added so scheduling mail is distinguishable from general work mail, and
-    # so a thread can be flagged important in its own right.
-    IMPORTANT = "Important"
-    MEETING = "Meeting"
-    INVITATION = "Invitation"
     SPAM = "Spam"
-    OTHER = "Other"
-
-
-class ToneEnum(str, Enum):
-    """Register of the sender, distinct from sentiment (polarity)."""
-    PROFESSIONAL = "Professional"
-    FORMAL = "Formal"
-    FRIENDLY = "Friendly"
-    ANGRY = "Angry"
-    URGENT = "Urgent"
-    NEUTRAL = "Neutral"
 
 class AttachmentInfo(BaseModel):
     id: str
@@ -47,51 +32,15 @@ class ActionItem(BaseModel):
     is_meeting: bool = False
     meeting_time: Optional[str] = None
 
-class Person(BaseModel):
-    """A named person mentioned in the message."""
-    name: str
-    role: Optional[str] = None
-    email: Optional[str] = None
-
-
-class MeetingDetails(BaseModel):
-    """Structured schedule information pulled out of the body."""
-    is_meeting: bool = False
-    title: Optional[str] = None
-    date: Optional[str] = None
-    time: Optional[str] = None
-    location: Optional[str] = None
-    platform: Optional[str] = None
-    attendees: List[str] = Field(default_factory=list)
-
-
 class EmailSummary(BaseModel):
     bullet_points: List[str] = Field(default_factory=list)
     one_liner: str = ""
     urgency_reason: Optional[str] = None
-    # Emotional register, i.e. polarity.
-    sentiment: str = "Neutral"  # Positive, Neutral, Urgent, Frustrated
-    # How the sender is speaking. Distinct from sentiment: a stern but polite
-    # CEO is tone=Professional, sentiment=Frustrated.
-    tone: str = "Neutral"  # Professional, Formal, Friendly, Angry, Urgent, Neutral
+    sentiment: str = "Neutral" # Positive, Neutral, Urgent, Frustrated
     key_deadlines: List[str] = Field(default_factory=list)
-    # Any other date mentioned, as opposed to an implied deadline.
-    dates: List[str] = Field(default_factory=list)
-    # Named people, excluding the account owner.
-    people: List[Person] = Field(default_factory=list)
-    meeting: Optional[MeetingDetails] = None
-    keywords: List[str] = Field(default_factory=list)
-    # True when the sender is waiting on an answer.
-    requires_reply: bool = False
-    # 0.0 to 1.0, how much this matters to the recipient.
-    importance_score: float = 0.0
 
 class EmailItem(BaseModel):
     id: str
-    # Owning account. Every read and write path is scoped by this field, so it
-    # must always be set by the route or the sync layer rather than trusted
-    # from a request body. Without it there is nothing to authorise against.
-    user_email: str = ""
     sender_name: str
     sender_email: str
     recipient_email: str = "user@example.com"
@@ -141,9 +90,6 @@ class ComposeEmailRequest(BaseModel):
     recipient: str
     subject: str
     body: str
-    # The message this replies to. Used to thread the reply and to set
-    # In-Reply-To. Validated against the caller's own mail by the route.
-    in_reply_to: Optional[str] = None
     category: Optional[CategoryEnum] = CategoryEnum.WORK
     priority: Optional[PriorityEnum] = PriorityEnum.MEDIUM
     attachments: Optional[List[Dict[str, Any]]] = None
@@ -205,36 +151,3 @@ class SettingsUpdateRequest(BaseModel):
     demo_mode: Optional[bool] = None
     auto_reply_enabled: Optional[bool] = None
     default_reply_tone: Optional[str] = None
-
-
-class StyleProfile(BaseModel):
-    """What the app has learned about how an account writes.
-
-    Deliberately descriptive rather than a mock: an empty corpus yields
-    ready=False, and the caller is expected to say so.
-    """
-    reply_count: int = 0
-    average_words: float = 0.0
-    average_sentence_length: float = 0.0
-    # 0 casual .. 1 formal
-    formality: float = 0.5
-    greeting: Optional[str] = None
-    sign_off: Optional[str] = None
-    uses_emoji: bool = False
-    uses_bullets: bool = False
-    common_phrases: List[str] = Field(default_factory=list)
-    language: str = "en"
-    # True once there is enough sent mail to be worth imitating.
-    ready: bool = False
-
-
-class AnalyzeRequest(BaseModel):
-    """An arbitrary email supplied by the user, not necessarily from a mailbox."""
-    subject: str = ""
-    body: str
-    sender_name: Optional[str] = None
-    sender_email: Optional[str] = None
-    save: bool = True
-    generate_reply: bool = False
-    tone: Optional[str] = None
-    personalize: bool = False
