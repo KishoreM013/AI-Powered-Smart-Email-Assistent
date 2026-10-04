@@ -9,8 +9,8 @@ const PRESET_COMMANDS = [
 ];
 
 const SPEECH_ERRORS = {
-  'not-allowed': 'Microphone access is blocked. Allow microphone access in your browser settings.',
-  'service-not-allowed': 'Speech recognition is disabled by this browser or device.',
+  'not-allowed': 'Microphone permission was denied. Enable microphone access for this site in browser settings, then tap the mic again.',
+  'service-not-allowed': 'Voice input is blocked by browser settings. Check microphone and speech permissions, then try again.',
   'no-speech': 'No speech was detected. Try again or type a command below.',
   'audio-capture': 'No microphone was found. Connect a microphone or type a command below.',
   network: 'Speech recognition could not connect. Check your connection or type a command below.'
@@ -23,10 +23,11 @@ export default function VoiceCommandModal({
   language = 'en'
 }) {
   const recognitionRef = useRef(null);
+  const requestIdRef = useRef(0);
   const onCloseRef = useRef(onClose);
   const onExecuteRef = useRef(onExecuteCommand);
   const [isListening, setIsListening] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(true);
+  const [isRequestingPermission, setIsRequestingPermission] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [commandText, setCommandText] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
@@ -38,6 +39,7 @@ export default function VoiceCommandModal({
   }, [onClose, onExecuteCommand]);
 
   const stopListening = useCallback(() => {
+    requestIdRef.current += 1;
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     if (recognition) {
@@ -51,6 +53,7 @@ export default function VoiceCommandModal({
       }
     }
     setIsListening(false);
+    setIsRequestingPermission(false);
   }, []);
 
   const executeCommand = useCallback((rawCommand) => {
@@ -65,60 +68,85 @@ export default function VoiceCommandModal({
     onCloseRef.current?.();
   }, [stopListening]);
 
-  const startListening = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setSpeechSupported(false);
-      setIsListening(false);
-      setErrorMessage('Voice recognition is not supported in this browser. Type a command below instead.');
-      return;
-    }
-
+  const startListening = useCallback(async () => {
     stopListening();
+    const requestId = ++requestIdRef.current;
     setErrorMessage('');
     setStatusMessage('');
     setTranscript('');
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = language === 'ta' ? 'ta-IN' : 'en-US';
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    recognitionRef.current = recognition;
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onresult = (event) => {
-      let finalTranscript = '';
-      let interimTranscript = '';
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const text = result[0]?.transcript || '';
-        if (result.isFinal) finalTranscript += text;
-        else interimTranscript += text;
-      }
-      const recognized = (finalTranscript || interimTranscript).trim();
-      if (recognized) {
-        setTranscript(recognized);
-        setCommandText(recognized);
-      }
-      if (finalTranscript.trim()) executeCommand(finalTranscript);
-    };
-    recognition.onerror = (event) => {
-      setIsListening(false);
-      setErrorMessage(SPEECH_ERRORS[event.error] || `Speech recognition failed (${event.error}). Try again or type a command.`);
-    };
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      setIsListening(false);
-    };
+    setIsRequestingPermission(true);
 
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Microphone access requires a secure connection. Open the app over HTTPS and try again.');
+      }
+
+      const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+      microphone.getTracks().forEach((track) => track.stop());
+      if (requestId !== requestIdRef.current) return;
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        setIsRequestingPermission(false);
+        setErrorMessage('Voice input could not start in this browser. You can still type a command below.');
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = language === 'ta' ? 'ta-IN' : 'en-US';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognitionRef.current = recognition;
+
+      recognition.onstart = () => {
+        setIsRequestingPermission(false);
+        setIsListening(true);
+        setStatusMessage('Microphone is on. Say a command.');
+      };
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const text = result[0]?.transcript || '';
+          if (result.isFinal) finalTranscript += text;
+          else interimTranscript += text;
+        }
+        const recognized = (finalTranscript || interimTranscript).trim();
+        if (recognized) {
+          setTranscript(recognized);
+          setCommandText(recognized);
+        }
+        if (finalTranscript.trim()) executeCommand(finalTranscript);
+      };
+      recognition.onerror = (event) => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
+        setIsRequestingPermission(false);
+        setIsListening(false);
+        setErrorMessage(SPEECH_ERRORS[event.error] || `Voice input failed (${event.error}). Tap the microphone to retry or type a command.`);
+      };
+      recognition.onend = () => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
+        setIsRequestingPermission(false);
+        setIsListening(false);
+      };
+
       recognition.start();
+      setIsRequestingPermission(false);
       setIsListening(true);
     } catch (error) {
-      recognitionRef.current = null;
+      if (requestId !== requestIdRef.current) return;
+      setIsRequestingPermission(false);
       setIsListening(false);
-      setErrorMessage(error instanceof Error ? error.message : 'Could not start speech recognition. Try again or type a command.');
+      const permissionDenied = error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError';
+      setErrorMessage(permissionDenied
+        ? SPEECH_ERRORS['not-allowed']
+        : error instanceof Error
+          ? error.message
+          : 'Could not start voice input. Tap the microphone to retry or type a command.');
     }
   }, [executeCommand, language, stopListening]);
 
@@ -129,14 +157,12 @@ export default function VoiceCommandModal({
     }
 
     setIsListening(false);
-    setSpeechSupported(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
     setTranscript('');
     setCommandText('');
     setStatusMessage('');
     setErrorMessage('');
-    startListening();
     return stopListening;
-  }, [isOpen, startListening, stopListening]);
+  }, [isOpen, stopListening]);
 
   if (!isOpen) return null;
 
@@ -174,18 +200,25 @@ export default function VoiceCommandModal({
                 ? 'scale-105 bg-gradient-to-tr from-indigo-600 via-purple-600 to-blue-500 text-white shadow-indigo-500/50'
                 : 'border border-slate-700 bg-slate-800 text-slate-300 hover:text-white'
             }`}
-            aria-label={isListening ? 'Stop listening' : 'Start listening'}
+            disabled={isRequestingPermission}
+            aria-label={isListening ? 'Stop listening' : 'Allow microphone access and start listening'}
           >
-            {isListening ? <Mic className="h-10 w-10 animate-bounce" /> : <MicOff className="h-10 w-10" />}
+            {isListening || isRequestingPermission
+              ? <Mic className="h-10 w-10 animate-bounce" />
+              : <MicOff className="h-10 w-10" />}
           </button>
         </div>
 
         <div className="w-full">
           <h3 className="text-xl font-black tracking-tight text-white">
-            {isListening ? 'Listening...' : speechSupported ? 'Ready for a command' : 'Voice input unavailable'}
+            {isRequestingPermission
+              ? 'Requesting microphone access...'
+              : isListening
+                ? 'Listening...'
+                : 'Tap the microphone to start'}
           </h3>
           <p aria-live="polite" className="mt-1 min-h-5 break-words text-xs font-semibold text-indigo-300">
-            {transcript || 'Say a command or choose one below.'}
+            {transcript || 'Allow microphone access when your browser asks, then say a command.'}
           </p>
           {statusMessage && <p className="mt-2 break-words text-xs text-emerald-300">{statusMessage}</p>}
           {errorMessage && <p role="alert" className="mt-2 break-words text-xs text-rose-300">{errorMessage}</p>}
@@ -230,9 +263,7 @@ export default function VoiceCommandModal({
         </div>
 
         <p className="w-full border-t border-slate-900 pt-3 text-[11px] text-slate-500">
-          {speechSupported
-            ? 'Voice input uses your browser’s speech recognition. Microphone permission may be required.'
-            : 'Voice recognition is not available in this browser. Typed commands still work.'}
+          Tap the microphone and allow access in your browser’s permission prompt. You can type a command anytime.
         </p>
       </div>
     </div>
