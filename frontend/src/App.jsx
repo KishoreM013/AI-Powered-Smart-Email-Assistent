@@ -14,6 +14,7 @@ import SettingsModal from './components/SettingsModal';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { emailsAPI, authAPI } from './services/api';
+import { parseVoiceCommand } from './utils/voiceCommands';
 
 export default function App() {
   const [user, setUser] = useState(() => {
@@ -73,6 +74,7 @@ export default function App() {
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAISummaryOpen, setIsAISummaryOpen] = useState(false);
+  const [summaryEmails, setSummaryEmails] = useState([]);
   const [isPhishingOpen, setIsPhishingOpen] = useState(false);
   const [isVoiceCommandOpen, setIsVoiceCommandOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
@@ -248,27 +250,56 @@ export default function App() {
     showToast("Signed out successfully.");
   };
 
-  // Handle Voice Commands:
-  const handleExecuteVoiceCommand = (cmdText) => {
-    const lower = cmdText.toLowerCase();
-    if (lower.includes('important')) {
-      setActiveFolder('important');
-      showToast("🎙️ Voice Action: Showing Important emails");
-    } else if (lower.includes('phishing') || lower.includes('suspicious')) {
+  const handleExecuteVoiceCommand = async (cmdText) => {
+    const command = parseVoiceCommand(cmdText);
+    if (command.type === 'empty' || command.type === 'unknown') {
+      showToast("I couldn't match that command. Try a folder, search, summary, or reply request.");
+      return;
+    }
+
+    setActiveView('inbox');
+    if (command.type === 'folder') {
+      setActiveFolder(command.folder);
+      setSelectedCategory(null);
+      setSearchQuery('');
+      setMobileDetailOpen(false);
+      showToast(`Showing ${command.folder === 'all' ? 'all mail' : command.folder} emails.`);
+      return;
+    }
+
+    if (command.type === 'search') {
+      setActiveFolder('all');
+      setSelectedCategory(null);
+      setSearchQuery(command.query);
+      setMobileDetailOpen(false);
+      showToast(`Searching emails for "${command.query}".`);
+      return;
+    }
+
+    if (command.type === 'phishing') {
       setIsPhishingOpen(true);
-      showToast("🎙️ Voice Action: Phishing Detection Shield opened");
-    } else if (lower.includes('summarize')) {
-      setIsAISummaryOpen(true);
-      showToast("🎙️ Voice Action: Summarizing email");
-    } else if (lower.includes('reply')) {
-      showToast("🎙️ Voice Action: Generating Smart AI Reply...");
-    } else if (lower.includes('unread')) {
-      setActiveFolder('inbox');
-      setSearchQuery('unread');
-      showToast("🎙️ Voice Action: Showing Unread emails");
-    } else {
-      setSearchQuery(cmdText);
-      showToast(`🎙️ Voice Action: Searching for "${cmdText}"`);
+      return;
+    }
+
+    if (command.type === 'summarize') {
+      try {
+        const mailboxEmails = await emailsAPI.getEmails({ folder: 'all' });
+        setSummaryEmails(mailboxEmails);
+        setIsAISummaryOpen(true);
+      } catch (error) {
+        console.error('Could not load email for voice summary:', error);
+        showToast('Could not load your email for a summary. Please try again.');
+      }
+      return;
+    }
+
+    if (command.type === 'reply' || command.type === 'open-selected') {
+      if (!selectedEmail) {
+        showToast('Open an email first, then ask me to reply or read it.');
+        return;
+      }
+      setMobileDetailOpen(true);
+      showToast(command.type === 'reply' ? 'Opened the selected email to reply.' : 'Opened the selected email.');
     }
   };
 
@@ -446,6 +477,7 @@ export default function App() {
         isOpen={isVoiceCommandOpen}
         onClose={() => setIsVoiceCommandOpen(false)}
         onExecuteCommand={handleExecuteVoiceCommand}
+        language={language}
       />
 
       <PhishingDetectionModal
@@ -457,7 +489,7 @@ export default function App() {
       <AISummaryModal
         isOpen={isAISummaryOpen}
         onClose={() => setIsAISummaryOpen(false)}
-        emails={emails}
+        emails={summaryEmails}
       />
 
       <ComposeModal
