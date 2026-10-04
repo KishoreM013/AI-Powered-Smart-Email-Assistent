@@ -24,6 +24,13 @@
   }
 }
 
+.email-message-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 5px;
@@ -95,4 +102,3 @@ html.dark .glass-panel {
 .badge-urgent {
   animation: urgent-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
-

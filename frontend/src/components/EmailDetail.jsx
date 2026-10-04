@@ -4,6 +4,7 @@ import {
   Bot, Edit, RefreshCw, Globe, Mic, CheckCircle2, ArrowLeft
 } from 'lucide-react';
 import { emailsAPI } from '../services/api';
+import EmailBody from './EmailBody';
 
 export default function EmailDetail({
   email,
@@ -154,7 +155,7 @@ export default function EmailDetail({
   }
 
   return (
-    <div className="flex-1 flex min-w-0 flex-col h-full bg-[#F8FAFC] dark:bg-[#090D17] overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4 transition-colors">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full bg-[#F8FAFC] dark:bg-[#090D17] overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4 transition-colors">
       
       {/* 1. Phishing Detection Header Banner (Feature 1) */}
       {phishingStatus && (
@@ -217,15 +218,13 @@ export default function EmailDetail({
       </div>
 
       {/* Main Email Content */}
-      <div className="p-4 sm:p-5 min-h-28 rounded-2xl bg-white dark:bg-[#0F1424] border border-slate-200 dark:border-slate-800 shadow-xs text-sm text-slate-800 dark:text-slate-200 leading-7 font-normal">
+      <div className="w-full min-w-0 min-h-72 overflow-x-hidden rounded-2xl border border-slate-200 bg-white p-0 text-sm font-normal leading-7 text-slate-800 shadow-xs dark:border-slate-800 dark:bg-[#0F1424] dark:text-slate-200 sm:min-h-80">
         {loadingBodyFor === activeEmail.id ? (
           <p role="status" className="text-slate-500 dark:text-slate-400">Loading message...</p>
         ) : bodyErrorFor === activeEmail.id ? (
           <p role="alert" className="text-rose-600 dark:text-rose-400">Could not load this message body. Select it again to retry.</p>
         ) : (
-          <p className="whitespace-pre-wrap break-words">
-            {activeEmail.body || 'This email has no body content.'}
-          </p>
+          <EmailBody body={activeEmail.body} />
         )}
       </div>
 
