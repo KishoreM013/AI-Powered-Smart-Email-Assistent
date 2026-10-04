@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import EmailList from './components/EmailList';
@@ -15,22 +15,17 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { emailsAPI, authAPI } from './services/api';
 
-const DEFAULT_USER = {
-  id: "usr-user-01",
-  email: "user@gmail.com",
-  name: "User Account",
-  avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=UserAccount",
-  connected_gmail: true
-};
-
 export default function App() {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('smart_email_user');
-    return saved ? JSON.parse(saved) : DEFAULT_USER;
+    return saved ? JSON.parse(saved) : null;
   });
 
-  const [showLandingPage, setShowLandingPage] = useState(false);
+  const [showLandingPage, setShowLandingPage] = useState(() => (
+    !Boolean(localStorage.getItem('smart_email_user'))
+  ));
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginError, setLoginError] = useState('');
 
   // Theme & Language State
   const [theme, setTheme] = useState(() => localStorage.getItem('smart_email_theme') || 'light');
@@ -61,6 +56,8 @@ export default function App() {
   // View States
   const [activeView, setActiveView] = useState('inbox');
   const [activeFolder, setActiveFolder] = useState('all');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -70,6 +67,7 @@ export default function App() {
   const [isLoadingEmails, setIsLoadingEmails] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [serverCounts, setServerCounts] = useState(null);
+  const initialSyncStarted = useRef(false);
 
   // Modals & Feature Dialogs
   const [isComposeOpen, setIsComposeOpen] = useState(false);
@@ -103,10 +101,11 @@ export default function App() {
         category: selectedCategory,
         search: searchQuery || undefined,
       });
-      setEmails(data || []);
-      if (data && data.length > 0) {
-        if (!selectedEmail || !data.some(e => e.id === selectedEmail.id)) {
-          setSelectedEmail(data[0]);
+      const nextEmails = Array.isArray(data) ? data : [];
+      setEmails(nextEmails);
+      if (nextEmails.length > 0) {
+        if (!selectedEmail || !nextEmails.some(e => e.id === selectedEmail.id)) {
+          setSelectedEmail(nextEmails[0]);
         }
       }
       await loadCounts();
@@ -123,6 +122,36 @@ export default function App() {
     }
   }, [user, activeFolder, selectedCategory, searchQuery, activeView]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!user || initialSyncStarted.current || params.has('token') || params.has('error')) return;
+
+    initialSyncStarted.current = true;
+    setIsSyncing(true);
+    emailsAPI.syncInbox()
+      .then(async (result) => {
+        await loadEmails('all');
+        await loadCounts();
+        if (result?.status === 'success') {
+          showToast(result.message || 'Inbox synchronized with Gmail.');
+        }
+      })
+      .catch((error) => {
+        const detail = error.response?.data?.detail || error.message || 'Unknown Gmail error';
+        if (error.response?.status === 401) {
+          localStorage.removeItem('smart_email_token');
+          localStorage.removeItem('smart_email_user');
+          setUser(null);
+          setShowLandingPage(true);
+          setShowLoginModal(true);
+          setLoginError('Your session expired. Sign in with Google again.');
+          return;
+        }
+        showToast(`Gmail sync failed: ${detail}`);
+      })
+      .finally(() => setIsSyncing(false));
+  }, []);
+
   const handleSync = async () => {
     setIsSyncing(true);
     try {
@@ -131,8 +160,11 @@ export default function App() {
       await loadCounts();
       showToast(res?.message || "Inbox synchronized with AI categorization!");
     } catch (e) {
-      console.error(e);
-      showToast("Inbox synchronized!");
+      const detail = e.response?.data?.detail || e.message || "Unknown Gmail error";
+      console.error("Gmail sync failed:", detail, e);
+      showToast(detail.includes("Gmail API has not been used")
+        ? "Enable the Gmail API in your Google Cloud project, then retry."
+        : `Gmail sync failed: ${detail}`);
     } finally {
       setIsSyncing(false);
     }
@@ -144,27 +176,64 @@ export default function App() {
     const error = urlParams.get('error');
     if (token) {
       localStorage.setItem('smart_email_token', token);
+      window.history.replaceState({}, document.title, '/');
       authAPI.getMe().then((userData) => {
-        if (userData && userData.email) {
-          handleLoginSuccess(userData);
+        if (!userData?.email) {
+          throw new Error('The returned session did not include a user profile.');
         }
-      }).catch(e => console.error("Error loading user profile:", e));
-      window.history.replaceState({}, document.title, window.location.pathname);
+        return handleLoginSuccess(userData);
+      }).catch((e) => {
+        console.error("Error loading user profile:", e);
+        localStorage.removeItem('smart_email_token');
+        localStorage.removeItem('smart_email_user');
+        setUser(null);
+        setShowLandingPage(true);
+        setShowLoginModal(true);
+        setLoginError(e.response?.data?.detail || 'Google sign-in returned, but the session could not be validated. Check the Supabase FRONTEND_URL and API configuration.');
+      });
     } else if (error) {
       setShowLandingPage(true);
       setShowLoginModal(true);
-      showToast("Authentication failed or cancelled. Please try again.");
-      window.history.replaceState({}, document.title, window.location.pathname);
+      const callbackErrors = {
+        access_denied: 'Google sign-in was canceled before consent completed. Start again and approve the requested access.',
+        auth_failed: 'Google returned to the app, but the backend could not exchange the authorization code. Check GOOGLE_CLIENT_SECRET and confirm the registered redirect URI exactly matches the configured callback.',
+        invalid_client: 'Google rejected the OAuth client credentials. Confirm GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET belong to the same OAuth client.',
+        invalid_grant: 'Google rejected the authorization code. Check the exact redirect URI and restart sign-in; authorization codes expire and can only be used once.',
+        invalid_request: 'Google rejected the token request. Confirm the configured redirect URI exactly matches the URI used to start sign-in.',
+        oauth_not_configured: 'Google OAuth is not configured on the local API. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then restart the backend.',
+        token_exchange_failed: 'Google could not exchange the authorization code. Check the OAuth client secret and exact redirect URI.',
+        unauthorized_client: 'This OAuth client is not allowed to use the requested sign-in flow. Check its Google Cloud OAuth settings.',
+        userinfo_failed: 'Google sign-in succeeded, but Google did not return the account profile. Check the requested email/profile scopes.',
+        callback_error: 'The local OAuth callback failed unexpectedly. Check the backend terminal for its diagnostic message.',
+        cancelled: 'Google sign-in was canceled before consent completed. Start again and approve the requested access.',
+      };
+      setLoginError(callbackErrors[error] || `Google sign-in failed (${error}). Check the OAuth client configuration and try again.`);
+      window.history.replaceState({}, document.title, '/');
     }
   }, []);
 
-  const handleLoginSuccess = (userObj) => {
+  const handleLoginSuccess = async (userObj) => {
     setUser(userObj);
     localStorage.setItem('smart_email_user', JSON.stringify(userObj));
     setShowLandingPage(false);
     setShowLoginModal(false);
-    loadEmails();
-    showToast(`Welcome back, ${userObj.name || 'User'}! Inbox synchronized.`);
+    setIsSyncing(true);
+    try {
+      await emailsAPI.syncInbox();
+      await loadEmails('all');
+      await loadCounts();
+      showToast(`Welcome back, ${userObj.name || 'User'}! Inbox synchronized.`);
+    } catch (error) {
+      const detail = error.response?.data?.detail || error.message || "Unknown Gmail error";
+      console.error('Initial inbox sync failed:', detail, error);
+      await loadEmails('all');
+      await loadCounts();
+      showToast(detail.includes("Gmail API has not been used")
+        ? "Signed in. Enable the Gmail API in Google Cloud, then retry Sync."
+        : `Signed in, but Gmail sync failed: ${detail}`);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleLogout = () => {
@@ -217,7 +286,7 @@ export default function App() {
 
   if (showLandingPage && !user) {
     if (showLoginModal) {
-      return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+      return <LoginPage onLoginSuccess={handleLoginSuccess} authError={loginError} />;
     }
     return (
       <LandingPage
@@ -230,7 +299,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#F8FAFC] dark:bg-[#090D16] text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden font-sans transition-colors duration-200 select-none">
+    <div className="h-[100dvh] min-h-0 w-full bg-[#F8FAFC] dark:bg-[#090D16] text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden font-sans transition-colors duration-200">
       
       {/* Top Navbar */}
       <Navbar
@@ -240,8 +309,8 @@ export default function App() {
         isSyncing={isSyncing}
         onOpenCompose={() => setIsComposeOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        unreadCount={emails.filter(e => !e.is_read).length}
-        urgentCount={emails.filter(e => e.priority === 'High').length}
+        unreadCount={serverCounts?.unread ?? emails.filter(e => !e.is_read).length}
+        urgentCount={serverCounts?.urgent ?? emails.filter(e => e.priority === 'High').length}
         user={activeUser}
         onLogout={handleLogout}
         theme={theme}
@@ -249,39 +318,52 @@ export default function App() {
         language={language}
         onToggleLanguage={toggleLanguage}
         onOpenVoiceCommand={() => setIsVoiceCommandOpen(true)}
+        onOpenMenu={() => setMobileSidebarOpen(true)}
       />
 
       {/* Main 3-Column Workspace Layout */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]">
         
         {/* Left Sidebar */}
         <Sidebar
+          isOpen={mobileSidebarOpen}
+          onClose={() => setMobileSidebarOpen(false)}
           activeView={activeView}
-          setActiveView={setActiveView}
+          setActiveView={(view) => {
+            setActiveView(view);
+            setMobileSidebarOpen(false);
+            setMobileDetailOpen(false);
+          }}
           activeFolder={activeFolder}
-          setActiveFolder={setActiveFolder}
+          setActiveFolder={(folder) => {
+            setActiveFolder(folder);
+            setMobileDetailOpen(false);
+          }}
           selectedCategory={selectedCategory}
           setSelectedCategory={setSelectedCategory}
-          unreadCount={emails.filter(e => !e.is_read).length}
-          urgentCount={emails.filter(e => e.priority === 'High').length}
+          unreadCount={serverCounts?.unread ?? emails.filter(e => !e.is_read).length}
+          urgentCount={serverCounts?.urgent ?? emails.filter(e => e.priority === 'High').length}
           folderCounts={folderCounts}
           user={activeUser}
-          onOpenAISummary={() => setIsAISummaryOpen(true)}
-          onOpenPhishingCenter={() => setIsPhishingOpen(true)}
-          onOpenSmartReply={() => showToast("Select an email thread to view AI Smart Reply")}
-          onOpenVoiceCommand={() => setIsVoiceCommandOpen(true)}
+          onOpenAISummary={() => { setIsAISummaryOpen(true); setMobileSidebarOpen(false); }}
+          onOpenPhishingCenter={() => { setIsPhishingOpen(true); setMobileSidebarOpen(false); }}
+          onOpenSmartReply={() => { showToast("Select an email thread to view AI Smart Reply"); setMobileSidebarOpen(false); }}
+          onOpenVoiceCommand={() => { setIsVoiceCommandOpen(true); setMobileSidebarOpen(false); }}
         />
 
         {/* Center Stage Email Workspace */}
         {activeView === 'inbox' && (
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex min-w-0 flex-1 overflow-hidden">
             {/* Center Email List Feed */}
-            <div className="w-full md:w-5/12 lg:w-5/12 flex-shrink-0 flex flex-col h-full border-r border-slate-200 dark:border-slate-800/80">
+            <div className={`${mobileDetailOpen ? 'hidden md:flex' : 'flex'} w-full min-w-0 md:w-[42%] xl:w-[34%] flex-shrink-0 flex-col h-full border-r border-slate-200 dark:border-slate-800/80`}>
               <EmailList
                 activeFolder={activeFolder}
                 emails={emails}
                 selectedEmail={selectedEmail}
-                onSelectEmail={(e) => setSelectedEmail(e)}
+                onSelectEmail={(e) => {
+                  setSelectedEmail(e);
+                  setMobileDetailOpen(true);
+                }}
                 onToggleStar={async (id) => {
                   await emailsAPI.toggleStar(id);
                   loadEmails();
@@ -300,10 +382,11 @@ export default function App() {
             </div>
 
             {/* Email Detail / Smart Reply View */}
-            <div className="hidden md:flex flex-1 flex-col h-full border-r border-slate-200 dark:border-slate-800/80">
+            <div className="hidden md:flex min-w-0 flex-1 flex-col h-full border-r border-slate-200 dark:border-slate-800/80">
               <EmailDetail
                 email={selectedEmail}
                 currentUser={activeUser}
+                onBack={() => setMobileDetailOpen(false)}
                 onSendReply={async (payload) => {
                   await emailsAPI.composeEmail(payload);
                   loadEmails();
@@ -314,6 +397,23 @@ export default function App() {
                 onOpenVoiceCommand={() => setIsVoiceCommandOpen(true)}
               />
             </div>
+            {mobileDetailOpen && (
+              <div className="absolute inset-0 z-20 flex min-w-0 flex-col bg-[#F8FAFC] dark:bg-[#090D17] md:hidden">
+                <EmailDetail
+                  email={selectedEmail}
+                  currentUser={activeUser}
+                  onBack={() => setMobileDetailOpen(false)}
+                  onSendReply={async (payload) => {
+                    await emailsAPI.composeEmail(payload);
+                    await loadEmails();
+                    showToast(`Reply sent to ${payload.recipient || 'recipient'}!`);
+                  }}
+                  language={language}
+                  onToggleLanguage={toggleLanguage}
+                  onOpenVoiceCommand={() => setIsVoiceCommandOpen(true)}
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -328,10 +428,11 @@ export default function App() {
         {/* Right AI Assistant Widget Column */}
         {activeView === 'inbox' && (
           <AIAssistantPanel
+            className="hidden xl:flex"
             user={activeUser}
-            totalEmails={emails.length || 12}
-            importantCount={emails.filter(e => e.priority === 'High' || e.is_starred).length || 5}
-            unreadCount={emails.filter(e => !e.is_read).length || 3}
+            totalEmails={serverCounts?.all ?? emails.length}
+            importantCount={serverCounts?.important ?? emails.filter(e => e.priority === 'High' || e.is_starred).length}
+            unreadCount={serverCounts?.unread ?? emails.filter(e => !e.is_read).length}
             onOpenAISummary={() => setIsAISummaryOpen(true)}
             onOpenPhishingCenter={() => setIsPhishingOpen(true)}
             onOpenSmartReply={() => showToast("Smart Reply assistant active in email detail pane.")}

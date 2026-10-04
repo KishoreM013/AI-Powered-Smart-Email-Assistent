@@ -19,7 +19,9 @@ export default function Sidebar({
   onOpenAISummary,
   onOpenPhishingCenter,
   onOpenSmartReply,
-  onOpenVoiceCommand
+  onOpenVoiceCommand,
+  isOpen = false,
+  onClose
 }) {
   const folders = [
     { id: 'all', label: 'All Mail', icon: Mail, count: folderCounts.all, badgeColor: 'bg-slate-700 text-white' },
@@ -35,7 +37,15 @@ export default function Sidebar({
   const userEmail = user?.email || "user@gmail.com";
 
   return (
-    <aside className="w-64 border-r border-slate-200 dark:border-slate-800/80 bg-white dark:bg-[#0B0F19] flex flex-col justify-between p-3 select-none flex-shrink-0 h-[calc(100vh-4rem)] transition-colors">
+    <>
+    {isOpen && (
+      <button
+        className="fixed inset-0 z-40 bg-slate-950/45 md:hidden"
+        onClick={onClose}
+        aria-label="Close navigation menu"
+      />
+    )}
+    <aside className={`${isOpen ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex h-[100dvh] w-[min(18rem,85vw)] shrink-0 flex-col justify-between border-r border-slate-200 bg-white p-3 transition-transform duration-200 dark:border-slate-800/80 dark:bg-[#0B0F19] md:static md:z-auto md:h-auto md:w-64 md:translate-x-0`}>
       <div className="space-y-6 overflow-y-auto pr-1">
         
         {/* Mailboxes Section */}
@@ -51,6 +61,7 @@ export default function Sidebar({
                     setActiveView('inbox');
                     setActiveFolder(folder.id);
                     setSelectedCategory(null);
+                    onClose?.();
                   }}
                   className={`w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
                     isActive
@@ -128,5 +139,6 @@ export default function Sidebar({
         </div>
       </div>
     </aside>
+    </>
   );
 }

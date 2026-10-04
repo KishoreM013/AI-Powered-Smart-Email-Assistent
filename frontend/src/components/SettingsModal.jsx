@@ -21,8 +21,8 @@ export default function SettingsModal({ isOpen, onClose, user, theme, onToggleTh
   const userEmail = user?.email || "user@gmail.com";
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in select-none">
-      <div className="bg-white dark:bg-[#0E1322] border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative text-left">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/80 p-3 backdrop-blur-md animate-fade-in select-none sm:p-4">
+      <div className="relative my-auto max-h-[94dvh] w-full max-w-md space-y-5 overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-2xl dark:border-slate-800 dark:bg-[#0E1322] sm:p-6">
         
         {/* Top Bar Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -40,18 +40,18 @@ export default function SettingsModal({ isOpen, onClose, user, theme, onToggleTh
 
         {/* User Account Card (Matching Panel 7) */}
         <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex min-w-0 items-center space-x-3">
             <img
               src={user?.avatar || user?.picture || `https://api.dicebear.com/7.x/bottts/svg?seed=${userEmail}`}
               alt="Avatar"
               className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-950 p-0.5 border border-indigo-300 dark:border-indigo-700"
             />
-            <div>
+            <div className="min-w-0">
               <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                {userName}
+                <span className="block truncate">{userName}</span>
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                {userEmail}
+                <span className="block truncate">{userEmail}</span>
               </p>
             </div>
           </div>

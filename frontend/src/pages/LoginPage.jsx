@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { authAPI } from '../services/api';
 
-export default function LoginPage({ onLoginSuccess }) {
+export default function LoginPage({ onLoginSuccess, authError = '' }) {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState('');
   const [authConfig, setAuthConfig] = useState({ is_live_configured: false, demo_mode: true });
@@ -19,6 +19,10 @@ export default function LoginPage({ onLoginSuccess }) {
 
   // Theme support
   const [theme, setTheme] = useState(() => localStorage.getItem('smart_email_theme') || 'light');
+
+  useEffect(() => {
+    if (authError) setErrorMsg(authError);
+  }, [authError]);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -63,7 +67,9 @@ export default function LoginPage({ onLoginSuccess }) {
         window.location.href = data.url;
         return;
       }
-      setErrorMsg('Google OAuth Cloud credentials missing. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend/.env to connect your real Gmail account.');
+      setErrorMsg(authConfig.demo_mode
+        ? 'Google sign-in is not configured yet. Use App Password (IMAP) for real Gmail, or configure Google OAuth in the Supabase project.'
+        : 'Google sign-in is unavailable. Please verify the Google OAuth settings in the Supabase project.');
     } catch (e) {
       console.error(e);
       setErrorMsg('Failed to connect to Google OAuth servers. Ensure backend is running.');
@@ -282,7 +288,7 @@ export default function LoginPage({ onLoginSuccess }) {
               className="hover:text-indigo-600 dark:hover:text-indigo-400 underline font-medium flex items-center space-x-1"
             >
               <HelpCircle className="w-3 h-3 text-indigo-500" />
-              <span>OAuth Cloud Setup</span>
+              <span>Google OAuth Setup</span>
             </button>
           </div>
 
@@ -368,17 +374,18 @@ export default function LoginPage({ onLoginSuccess }) {
                   Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline inline-flex items-center gap-0.5">Google Cloud Console <ExternalLink className="w-3 h-3" /></a> and create an <strong>OAuth 2.0 Client ID</strong> (Web Application).
                 </li>
                 <li>
-                  Add Authorized Redirect URI: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] font-mono text-indigo-600 dark:text-indigo-400">http://localhost:8000/api/auth/callback</code>
+                  In Google Cloud Console, open the OAuth client whose ID ends in <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] font-mono text-indigo-600 dark:text-indigo-400">obtetni.apps.googleusercontent.com</code> and add this Authorized Redirect URI exactly:
+                  <code className="block bg-slate-100 dark:bg-slate-800 px-1.5 py-1.5 rounded text-[11px] font-mono text-indigo-600 dark:text-indigo-400 mt-1 break-all">https://ocjtrlioqnbpccjjcizr.supabase.co/functions/v1/api/auth/callback</code>
                 </li>
                 <li>
-                  Enable the <strong>Gmail API</strong> in API Library.
+                  In the same Google Cloud project as this OAuth client, enable the <strong>Gmail API</strong> from the <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 underline">API Library</a>. The OAuth client and Gmail API must belong to the same project.
                 </li>
                 <li>
-                  Add your credentials to <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] font-mono">backend/.env</code>:
+                  Add <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] font-mono">GOOGLE_CLIENT_ID</code> and <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] font-mono">GOOGLE_CLIENT_SECRET</code> to Supabase Edge Function secrets:
                   <pre className="bg-slate-900 text-slate-200 p-2.5 rounded-xl font-mono text-[11px] mt-1.5 overflow-x-auto">
 {`GOOGLE_CLIENT_ID=your_client_id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your_client_secret
-GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback`}
+GOOGLE_REDIRECT_URI=https://ocjtrlioqnbpccjjcizr.supabase.co/functions/v1/api/auth/callback`}
                   </pre>
                 </li>
               </ol>
@@ -406,4 +413,3 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/api/auth/callback`}
     </div>
   );
 }
-

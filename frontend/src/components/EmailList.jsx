@@ -182,19 +182,19 @@ export default function EmailList({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white dark:bg-[#0D111D] overflow-hidden select-none transition-colors">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col h-full bg-white dark:bg-[#0D111D] overflow-hidden transition-colors">
       
       {/* Top Header & Filter Tabs Bar */}
-      <div className="p-3.5 border-b border-slate-200 dark:border-slate-800/80 flex items-center justify-between">
-        <h2 className="font-extrabold text-base text-slate-900 dark:text-white">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 p-3 dark:border-slate-800/80 sm:flex-nowrap sm:p-3.5">
+        <h2 className="font-extrabold text-sm text-slate-900 dark:text-white sm:text-base">
           {getFolderTitle()}
         </h2>
 
         {/* Filter Tabs */}
-        <div className="flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl text-xs font-semibold">
+        <div className="flex max-w-full items-center space-x-1 overflow-x-auto p-1 bg-slate-100 dark:bg-slate-900 rounded-xl text-[10px] font-semibold sm:text-xs">
           <button
             onClick={() => setFilterTab('all')}
-            className={`px-3 py-1 rounded-lg transition ${
+            className={`px-2 py-1 rounded-lg transition sm:px-3 ${
               filterTab === 'all'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs font-bold'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
@@ -204,7 +204,7 @@ export default function EmailList({
           </button>
           <button
             onClick={() => setFilterTab('important')}
-            className={`px-3 py-1 rounded-lg transition ${
+            className={`px-2 py-1 rounded-lg transition sm:px-3 ${
               filterTab === 'important'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs font-bold'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
@@ -214,7 +214,7 @@ export default function EmailList({
           </button>
           <button
             onClick={() => setFilterTab('unread')}
-            className={`px-3 py-1 rounded-lg transition ${
+            className={`px-2 py-1 rounded-lg transition sm:px-3 ${
               filterTab === 'unread'
                 ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs font-bold'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
@@ -243,7 +243,7 @@ export default function EmailList({
               <div
                 key={item.id}
                 onClick={() => onSelectEmail && onSelectEmail(item)}
-                className={`p-3.5 flex items-start space-x-3 cursor-pointer transition relative group ${
+                className={`flex items-start space-x-2.5 p-3 transition relative group sm:space-x-3 sm:p-3.5 ${
                   isSelected
                     ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-l-4 border-indigo-600'
                     : item.is_read

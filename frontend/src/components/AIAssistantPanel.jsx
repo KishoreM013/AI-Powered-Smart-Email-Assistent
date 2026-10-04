@@ -12,12 +12,13 @@ export default function AIAssistantPanel({
   onOpenAISummary,
   onOpenPhishingCenter,
   onOpenSmartReply,
-  onOpenVoiceCommand
+  onOpenVoiceCommand,
+  className = ''
 }) {
   const userName = user?.name || (user?.email ? user.email.split('@')[0] : "User");
 
   return (
-    <aside className="w-80 lg:w-84 border-l border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-[#0B0F19] p-4 flex flex-col space-y-4 overflow-y-auto select-none flex-shrink-0 transition-colors">
+    <aside className={`${className} w-80 shrink-0 flex-col space-y-4 overflow-y-auto border-l border-slate-200 bg-slate-50/50 p-4 transition-colors dark:border-slate-800/80 dark:bg-[#0B0F19] 2xl:w-84`}>
       
       {/* Header title */}
       <div className="flex items-center justify-between">

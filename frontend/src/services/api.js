@@ -1,15 +1,10 @@
 import axios from 'axios';
 
-// Supabase Edge Function URL, from `supabase functions list`.
-//
-// A bare '' would resolve against the current origin, which works when the
-// frontend is served by the same host as the function. It does not work for
-// Vercel or Netlify, which have no route for /api/*, so the URL is required
-// rather than optional. The 10s timeout is raised too: a cold-started edge
-// function plus a Gemini call can exceed 10s and would otherwise surface as a
-// spurious network error.
-const API_BASE = import.meta.env.VITE_SUPABASE_FUNCTION_URL || import.meta.env.VITE_API_URL || '';
-export const API_CONFIGURED = Boolean(API_BASE);
+// Use the same-origin Vercel function in production and Vite's /api proxy
+// locally. The server-side proxy keeps Supabase routing and keys out of the
+// browser bundle.
+const API_BASE = import.meta.env.VITE_API_URL || '';
+export const API_CONFIGURED = true;
 
 // Axios resolves with the full response; the rest of the app wants the body.
 // Every helper below goes through this one function.
@@ -21,9 +16,6 @@ const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
-    // Supabase's gateway requires these on every request even though this
-    // function sets verify_jwt = false.
-    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
   },
   timeout: 30000,
 });
@@ -110,13 +102,8 @@ export const authAPI = {
   },
 
   getMe: async () => {
-    try {
-      const res = await api.get('/api/auth/me');
-      return res.data;
-    } catch (e) {
-      const savedUser = localStorage.getItem('smart_email_user');
-      return savedUser ? JSON.parse(savedUser) : null;
-    }
+    const res = await api.get('/api/auth/me');
+    return res.data;
   },
 
   /**
@@ -161,7 +148,7 @@ export const emailsAPI = {
     );
     try {
       const res = await api.get('/api/emails', { params: clean });
-      return res.data;
+      return Array.isArray(res.data) ? res.data : [];
     } catch (e) {
       return [];
     }
@@ -177,12 +164,8 @@ export const emailsAPI = {
   },
 
   syncInbox: async () => {
-    try {
-      const res = await api.post('/api/emails/sync');
-      return res.data;
-    } catch (e) {
-      return { status: 'success', message: 'Offline inbox synchronized with AI categorization!' };
-    }
+    const res = await api.post('/api/emails/sync');
+    return res.data;
   },
 
   /**
